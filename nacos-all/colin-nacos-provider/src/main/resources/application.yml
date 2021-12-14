@@ -1,0 +1,16 @@
+server:
+    port: 8082
+
+spring:
+    application:
+        name: colin-nacos-provider
+    cloud:
+        nacos:
+            discovery:
+                server-addr: localhost:8848
+                # 默认为 public
+                namespace: my_namespace_id
+                # 默认为 DEFAULT_GROUP
+                group: my_group
+                # 默认为 DEFAULT
+                cluster-name: myCluster

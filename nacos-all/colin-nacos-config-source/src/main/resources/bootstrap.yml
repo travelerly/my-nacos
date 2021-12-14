@@ -1,0 +1,33 @@
+spring:
+    application:
+        name: colin-nacos-config-source
+    cloud:
+        nacos:
+            config:
+                server-addr: localhost:8848
+                # 指定配置文件类型为 yml
+                file-extension: yml
+
+                # 共享配置：要求共享配置文件与当前应用配置文件必须在同一个 Group 中
+                # 共享配置(方式一)
+                # shared-configs: redis.yml,mysql.yml
+                # 共享配置(方式二)
+                shared-configs[0]:
+                    data-id: redis.yml
+                    refresh: true
+                shared-configs[1]:
+                    data-id: mysql.yml
+                    refresh: true
+
+                # 扩展配置：扩展配置文件与应用无需在同一个 Group 中
+                extension-configs[0]:
+                    data-id: redis.yml
+                    refresh: true
+                    group: other
+                extension-configs[1]:
+                    data-id: mysql.yml
+                    refresh: true
+                    group: other
+    # 多环境选择
+    profiles:
+        active: test
