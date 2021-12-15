@@ -385,16 +385,19 @@ public class ClientWorker implements Closeable {
 
     /**
      * Check config info.
+     * 向 nacos config server 发送"配置变更检测"请求(一个线程周期性的执行此方法)
      */
     public void checkConfigInfo() {
         // Dispatch taskes.
         // cacheMap 的 key 为配置文件的 key，即配置文件名称+groupId
         // cacheMap 的 value 为 CacheData，每个配置文件对应一个 CacheData，用于存放来自于 Server 端的配置文件数据
         int listenerSize = cacheMap.size();
+
         // Round up the longingTaskCount.
         // PerTaskConfigSize：每个长轮询任务可携带的配置文件数量，默认为 3000 个
         // 向上取证
         int longingTaskCount = (int) Math.ceil(listenerSize / ParamUtil.getPerTaskConfigSize());
+
         if (longingTaskCount > currentLongingTaskCount) {
             for (int i = (int) currentLongingTaskCount; i < longingTaskCount; i++) {
                 // The task list is no order.So it maybe has issues when changing.
@@ -415,7 +418,7 @@ public class ClientWorker implements Closeable {
      */
     List<String> checkUpdateDataIds(List<CacheData> cacheDatas, List<String> inInitializingCacheList) throws Exception {
         StringBuilder sb = new StringBuilder();
-        // 将 CacheData 中的所有配置文件名称全部拼接为 String，发送给 Server，检测是否发生了变更
+        // 将 CacheData 中的所有配置文件名称全部拼接为 String
         for (CacheData cacheData : cacheDatas) {
             if (!cacheData.isUseLocalConfigInfo()) {
                 sb.append(cacheData.dataId).append(WORD_SEPARATOR);
@@ -434,7 +437,8 @@ public class ClientWorker implements Closeable {
             }
         }
         boolean isInitializingCacheList = !inInitializingCacheList.isEmpty();
-        // 将所有配置文件名称拼接后的 String 发送给 Server
+
+        // 将所有配置文件名称拼接后的 String 发送给 nacos config server
         return checkUpdateConfigStr(sb.toString(), isInitializingCacheList);
     }
 
@@ -570,7 +574,7 @@ public class ClientWorker implements Closeable {
             @Override
             public void run() {
                 try {
-                    //发起配置变更检测请求(一个线程周期性的执行此方法)
+                    // 向 nacos config server 发送"配置变更检测"请求(一个线程周期性的执行此方法)
                     checkConfigInfo();
                 } catch (Throwable e) {
                     LOGGER.error("[" + agent.getName() + "] [sub-check] rotate check error", e);
@@ -600,6 +604,7 @@ public class ClientWorker implements Closeable {
         LOGGER.info("{} do shutdown stop", className);
     }
 
+    // 长轮询任务
     class LongPollingRunnable implements Runnable {
 
         private final int taskId;
@@ -631,7 +636,11 @@ public class ClientWorker implements Closeable {
                     }
                 }
 
-                // 从 Server 端检测 cacheDatas 中的这些配置文件是否发生了变更，并返回所有发生了变更了的配置文件的 key(即配置文件名称+groupId)。check server config
+                // check server config
+                /**
+                 * 从 nacos config server 端检测 cacheDatas 中的这些配置文件是否发生了变更，
+                 * 并返回所有发生了变更了的配置文件的 key(即配置文件名称+groupId)
+                 */
                 List<String> changedGroupKeys = checkUpdateDataIds(cacheDatas, inInitializingCacheList);
                 if (!CollectionUtils.isEmpty(changedGroupKeys)) {
                     LOGGER.info("get changedGroupKeys:" + changedGroupKeys);
@@ -647,11 +656,12 @@ public class ClientWorker implements Closeable {
                         tenant = key[2];
                     }
                     try {
-                        // 从 Server 端获取当前遍历到的配置文件的最新数据内容
+                        // 向 nacos config server 端发起请求，获取当前遍历到的"变更的配置信息"的最新内容
                         String[] ct = getServerConfig(dataId, group, tenant, 3000L);
-                        // 从缓存中获取当前遍历到的配置文件的 CacheData
+
+                        // 从缓存中获取当前遍历到的"变更的配置信息"的 CacheData
                         CacheData cache = cacheMap.get(GroupKey.getKeyTenant(dataId, group, tenant));
-                        // 将从 Server 端获取的当前配置文件的最新内容更新到 CacheData 中
+                        // 将当前配置信息的最新内容更新到 CacheData 中
                         cache.setContent(ct[0]);
                         if (null != ct[1]) {
                             cache.setType(ct[1]);
@@ -676,6 +686,7 @@ public class ClientWorker implements Closeable {
                     }
                 }
                 inInitializingCacheList.clear();
+
                 // 启动下一次的定时任务
                 executorService.execute(this);
 

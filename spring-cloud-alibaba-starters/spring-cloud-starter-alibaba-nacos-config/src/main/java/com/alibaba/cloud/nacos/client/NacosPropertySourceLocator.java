@@ -89,7 +89,7 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 				timeout);
 		// 获取配置文件中 spring.cloud.nacos.config.name 的属性值，即加载配置文件的名称
 		String name = nacosConfigProperties.getName();
-		// 获取配置文件中 spring.cloud.nacos.config.prefix 的属性值，即加载配置文件的名称
+		// 获取配置文件中 spring.cloud.nacos.config.prefix 的属性值，即加载配置文件的前缀
 		String dataIdPrefix = nacosConfigProperties.getPrefix();
 		if (StringUtils.isEmpty(dataIdPrefix)) {
 			dataIdPrefix = name;
@@ -104,10 +104,21 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 
 		// 加载共享配置（1.先加载本地自身配置，2.若没有本地自身配置，则加载远程配置，3.若也没有远程配置，则加载本地快照配置）
 		loadSharedConfiguration(composite);
+
 		// 加载扩展配置（1.先加载本地自身配置，2.若没有本地自身配置，则加载远程配置，3.若也没有远程配置，则加载本地快照配置）
 		loadExtConfiguration(composite);
-		// 加载应用自身配置（会加载三类配文件：1.加载仅有文件名称，没有扩展名的配置文件，2.加载有文件名称，也有扩展名的配置文件，3.加载有文件名称、有扩展名、并且还包含多环境选择 profile 的配置文件）
-		// 并且每类配置文件还分别加载三处位置的配置文件：1.先加载本地自身配置，2.若没有本地自身配置，则加载远程配置，3.若也没有远程配置，则加载本地快照配置
+
+		/**
+		 * 加载应用自身配置，会分为以下三种情况：
+		 * 	1.加载仅有文件名称，没有扩展名的配置文件，
+		 * 	2.加载有文件名称，也有扩展名的配置文件，
+		 * 	3.加载有文件名称、有扩展名、并且还包含多环境选择 profile 的配置文件
+		 *
+		 * 加载每种配置时，根据配置文件所在位置，按照顺序依次加载：
+		 * 	1.先加载本地配置
+		 * 	2.若没有本地配置，则加载远程配置中心中的配置
+		 * 	3.若本地和远程都没有，则加载本地快照中的配置
+		 */
 		loadApplicationConfiguration(composite, dataIdPrefix, nacosConfigProperties, env);
 		return composite;
 	}
@@ -177,7 +188,7 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 	private void loadNacosConfiguration(final CompositePropertySource composite,
 			List<NacosConfigProperties.Config> configs) {
 		for (NacosConfigProperties.Config config : configs) {
-			// 加载当前遍历的配置文件
+			// 加载当前遍历到的配置文件
 			loadNacosDataIfPresent(composite, config.getDataId(), config.getGroup(),
 					NacosDataParserHandler.getInstance()
 							.getFileExtension(config.getDataId()),

@@ -230,7 +230,7 @@ public class LongPollingService {
     }
 
     /**
-     * Add LongPollingClient.
+     * 长轮询处理方式。Add LongPollingClient.
      *
      * @param req              HttpServletRequest.
      * @param rsp              HttpServletResponse.
@@ -248,7 +248,7 @@ public class LongPollingService {
         String appName = req.getHeader(RequestUtil.CLIENT_APPNAME_HEADER);
         String tag = req.getHeader("Vipserver-Tag");
 
-        // 这个时间是长链接提前关闭任务的时间
+        // 这个时间是长链接提前关闭任务的时间。默认 500ms
         int delayTime = SwitchService.getSwitchInteger(SwitchService.FIXED_DELAY_TIME, 500);
 
         // Add delay time for LoadBalance, and one response is returned 500 ms in advance to avoid client timeout.
@@ -308,7 +308,7 @@ public class LongPollingService {
         ConfigExecutor.scheduleLongPolling(new StatTask(), 0L, 10L, TimeUnit.SECONDS);
 
         // Register LocalDataChangeEvent to NotifyCenter.
-        // 将 LocalDataChangeEvent 事件注册到 NotifyCenter 中。（注册到 NotifyCenter 中的订阅者，就会被 LocalDataChangeEvent 事件所触发）
+        // 将 LocalDataChangeEvent 事件注册到 NotifyCenter 中。注册到 NotifyCenter 中的订阅者，就会被 LocalDataChangeEvent 事件所触发）
         NotifyCenter.registerToPublisher(LocalDataChangeEvent.class, NotifyCenter.ringBufferSize);
 
         // Register A Subscriber to subscribe LocalDataChangeEvent.

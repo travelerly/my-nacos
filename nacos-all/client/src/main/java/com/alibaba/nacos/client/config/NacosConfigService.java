@@ -86,7 +86,7 @@ public class NacosConfigService implements ConfigService {
         // agent：Nacos 自研的 HttpClient
         this.agent = new MetricsHttpAgent(new ServerHttpAgent(properties));
         this.agent.start();
-        // 创建 worker
+        // 创建 ClientWorker。ClientWorker 会创建一个定时任务，定时向 nacos  config server 端发出“配置文件变更”检测请求
         this.worker = new ClientWorker(this.agent, this.configFilterChainManager, properties);
     }
 

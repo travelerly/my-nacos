@@ -38,6 +38,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Listener Management.
  *
  * @author Nacos
+ *
+ * 配置文件的本地缓存，每个配置文件对应一个 CacheData。
+ * 一旦  nacos config client 应用启动完毕，就会为每个配置文件创建一个本地缓存 CacheData，并为每个 CacheData 添加一个监听器
  */
 public class CacheData {
 

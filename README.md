@@ -172,7 +172,7 @@ private final NamingProxy serverProxy;
 2. spring-cloud-starter-alibaba-nacos-discovery→spring.factories→NacosServiceRegistryAutoConfiguration
 3. 即应用启动会自动注入 NacosServiceRegistryAutoConfiguration，它会创建 NacosAutoServiceRegistration，是 AutoServiceRegistration 的实现类
 
-> 若要使得某个注册中心与 Spring Cloud 整合后，完成客户端-Client 的自动注册，那么就需要该注册中心的客户端的依赖实现 AutoServiceRegistrationAutoConfiguration 的规范，确切的说是要自定义一个 Starter，完成 AutoServiceRegistration 实例的创建于注入。
+> 若要使得某个注册中心与 Spring Cloud 整合后，完成客户端-Client 的自动注册，那么就需要该注册中心的客户端的依赖实现 AutoServiceRegistrationAutoConfiguration 的规范，确切的说是要自定义一个 Starter，完成 AutoServiceRegistration 实例的创建与注入。
 
 ```java
 // 应用启动，加载 NacosServiceRegistryAutoConfiguration
@@ -428,7 +428,7 @@ Nacos Server 对于 Nacos Client 的注册请求，主要由两大环节构成�
 
 1. 若本地注册表中不存在要注册的服务 Instance 对应的 Service，则会创建一个对应的 Service；
 2. 根据当前注册的服务的 namespaceId 和 serviceName 到其它 Nacos Server 中查找对应的数据，与本次注册的服务对应的 Instance 数据做对比，存在以下两种情况
-   1. 若本次注册的服务在远程 Nacos Server 中也存在，则以本次注册的服务对应的数据为准**，将远程 Nacos Server 中的所有的相关数据都替换成本次注册的数据，并将所有替换好的数据封装起来，再通过一致性服务同步到所有  Nacos Server 中。
+   1. 若本次注册的服务在远程 Nacos Server 中也存在，则以本次注册的服务对应的数据为准，将远程 Nacos Server 中的所有的相关数据都替换成本次注册的数据，并将所有替换好的数据封装起来，再通过一致性服务同步到所有  Nacos Server 中。
    2. 若本次注册的服务在远程 Nacos Server 中不存在，则直接封装本次注册的数据，再通过一致性服务同步到所有  Nacos Server 中。
 
 
@@ -519,17 +519,17 @@ Nacos Client 接收 Nacos Server 发送的 UDP 请求：
 
 <br>
 
-Nacos Server 与 Nacos Client 之间之所以能够保持 UDP 通信，是因为在  Nacos Server 中维护着一个缓存 Map，这个 map 是一个双层 map。外层 Map 的 key 为服务名称，格式为：**namespaceId##groupId@@微服务名**，value 为内存 map；而内层 map 的 key 为 代表 Instance 的字符串，value 为 Nacos Server 与 Nacos Client 进行 UDP 链接的 PushClient，这个 PushClient 是包含了这个 Nacos Client 的 port 等数据。也就是说  Nacos Server 中维护着每一个注册在其中的 Nacos Client 对应的 UDP 通信客户端 PushClient。
+Nacos Server 与 Nacos Client 之间之所以能够保持 UDP 通信，是因为在  Nacos Server 中维护着一个缓存 Map，这个 map 是一个双层 map。外层 Map 的 key 为服务名称，格式为：**namespaceId##groupId@@微服务名**，value 为内存 map；而内层 map 的 key 为 代表 Instance 的字符串，value 为 Nacos Server 与 Nacos Client 进行 UDP 链接的 PushClient，这个 PushClient 是包含了这个 Nacos Client 的 port 等数据。**也就是说  Nacos Server 中维护着每一个注册在其中的 Nacos Client 对应的 UDP 通信客户端 PushClient**。
 
 <br>
 
 Nacos Server 与 Nacos Client 之间的 UDP 通信，发生在什么状况下？
 
-- 当 Nacos Server 通过心跳机制检测到其注册表中维护的 Instance 实例数据的 healthy 状态变为了 fasle，其需要将这个变更通知到所有订阅该服务的 Nacos Client客户端，而该事件会触发  Nacos Server 通过 UDP 通信将数据发送给 Nacos Client。
+- 当 Nacos Server 通过心跳机制检测到其注册表中维护的 Instance 实例数据的 healthy 状态变为了 fasle，其需要将这个变更通知到所有订阅该服务的 Nacos Client客户端，Nacos Server 会发布一个事件，而该事件会触发  Nacos Server 通过 UDP 通信将数据发送给 Nacos Client。
 
 <br>
 
-Nacos Server 与 Nacos Client 之间的 UDP 通信， Nacos Server 充当着 UDP 通信的 Client 端，而 Nacos Client 充当着 Server 端，所以，在 Nacos Client 中有一个线程处于无限循环中，以随时检测到  Nacos Server 推送来的数据。
+Nacos Server 与 Nacos Client 之间的 UDP 通信， Nacos Server 充当着 UDP 通信的 Client 端，而 Nacos Client 充当着 Server 端，所以，**在 Nacos Client 中有一个线程处于无限循环中，以随时检测到  Nacos Server 推送来的数据。**
 
 Nacos Server 与 Nacos Client 之间的 UDP 通信，Nacos Server 作为 UDP 通信的 Client 端，其需要知道其链接的 UDP Server，即 Nacos Client 的端口号。在 Nacos Client 定时从  Nacos Server 获取数据时，会随着请求将其 port 发送给  Nacos Server。
 
@@ -580,7 +580,7 @@ Nacos Config 中有一个概念：tenant，其实就是 namespace，是 bootstra
     - Nacos Config 和 Apollo 则是“定点更新”，谁的配置变更了向谁推送
 3. 自动感知配置变更
     - Spring Cloud Config 是 Config Client 不提交请求，其实无法感知配置变更的。
-    - Nacos Config 和 Apollo：当 Config Server 中的配置问价发生变更，Config Client 会自动感知到这个变更，无需 Config Client 端的用户做任何操作
+    - Nacos Config 和 Apollo：当 Config Server 中的配置文件发生变更，Config Client 会自动感知到这个变更，无需 Config Client 端的用户做任何操作
 4. 配置文件类型
     - Nacos Config 和 Spring Cloud Config 的配置文件支持比较多的类型，包括 yml、text、json、xml、html、properties 等
     - Apollo 只支持 xml、text、properties，不支持 yml
@@ -683,7 +683,12 @@ Nacos Config Client 要加载的配置文件有三种
 
 #### 配置文件的加载时机
 
-SpringBoot 在启动时，会准备环境，就会调用 **NacosPropertySourceLocator.locate()** 方法，此方法会从配置中心加载配置文件。
+- SpringBoot 在启动时，会准备环境，就会调用 **NacosPropertySourceLocator.locate()** 方法，此方法会从配置中心加载配置文件。按顺序分别加载共享配置、扩展配置、应用自身配置。
+- 加载自身配置时，会分为以下三种情况：
+  1. 加载仅有文件名称，没有扩展名的配置文件
+  2. 加载有文件名称，也有扩展名的配置文件
+  3. 加载有文件名称、有扩展名、并且还包含多环境选择 profile 的配置文件
+- 而加载每种配置时，根据配置文件所在位置，按照顺序依次加载：优先加载本地配置；若没有本地配置，则加载远程配置中心中的配置；若本地和远程都没有，则加载快照中的配置文件。
 
 <br>
 
@@ -703,9 +708,9 @@ SpringBoot 在启动时，会准备环境，就会调用 **NacosPropertySourceLo
 
 <br>
 
-**nacos config client 定时发出“配置文件变更”检测**
+#### client 端定时发出“配置文件变更”检测
 
-应用启动时，会创建 NacosConfigAutoConfiguration，NacosConfigAutoConfiguration 会创建 NacosConfigManager，NacosConfigManager 会创建 NacosConfigService，NacosConfigService 会创建 ClientWorker，ClientWorker 会启动一个定时任务，来周期性的向 nacos  config server 端发出“配置文件变更”检测请求。
+应用启动时，会创建 NacosConfigAutoConfiguration，NacosConfigAutoConfiguration 会创建 NacosConfigManager，NacosConfigManager 会创建 NacosConfigService，**NacosConfigService 会创建 ClientWorker，ClientWorker 会启动一个定时任务，来周期性的向 nacos  config server 端发出“配置文件变更”检测请求**。
 
 nacos config client 中是以异步线程池的方式向 nacos config server 端发出长轮询任务请求，为了保证执行效率，执行这个异步请求的线程池的核心线程数是当前主机处理器可用的逻辑内核数量，这样可用保证一个逻辑内核处理一个线程。
 
@@ -713,28 +718,30 @@ nacos config client 向 nacos config server 发出的长轮询任务的链接请
 
 <br>
 
-**nacos config client 将配置变更同步到应用实例中**
+#### client 端将配置变更同步到应用实例中
 
 1. nacos config client 的每个配置文件对应的 CacheData 是什么时候创建的？
-    - 一旦  nacos config client 应用启动完毕，就会遍历所有配置文件，为每个配置文件创建一个本地缓存 CacheData，并为每个 CacheData 添加一个监听器。一旦监听到 CacheData 中的数据发生了变更，就会引发监听回调函数的执行。该回调函数并未直接从 CacheData 中读取变更数据，而是发布了一个刷新事件 RefreshEvent，该事件能够触发所有被 @RefreshScope 标注的类的实例被重新创建并初始化，而初始化时使用的会自动更新的属性（被 @Value 标注的属性）值就来自于 CacheData。
+    - **一旦  nacos config client 应用启动完毕，就会遍历所有配置文件，为每个配置文件创建一个本地缓存 CacheData，并为每个 CacheData 添加一个监听器。一旦监听到 CacheData 中的数据发生了变更，就会引发监听回调函数的执行。该回调函数并未直接从 CacheData 中读取变更数据，而是发布了一个刷新事件 RefreshEvent，该事件能够触发所有被 @RefreshScope 标注的类的实例被重新创建并初始化，而初始化时使用的会自动更新的属性（被 @Value 标注的属性）值就来自于 CacheData。**
     - @RefreshScope的理解：在 Spring 容器中，对于 Bean 是分区域进行管理的，每一个 scope 就是一个区域。例如：singleton、prototype 等。在 Spring Cloud 中又新增了一个自动刷新的 scope 区域，refresh。对于可刷新 Bean 的管理，Spring Cloud 首先是将 Spring 容器中 refresh 区域的所有 Bean 全部清除掉，然后在使用这些 Bean 时重新创建并初始化这些 Bean，而初始化时使用到的数据就是来自最新的数据，即从 CacheData 中取值。
 
 <br>
 
 2. 从  nacos config client 的角度看，其是如何做到配置文件自动更新的？
     - 在  nacos config client 启动时就会创建一个 NacosConfigService 实例，用于处理 NacosConfig 相关的操作。但实际上这些操作都是由 ClientWorker 实例在完成，在创建 NacosConfigService 实例时就会创建一个 ClientWorker 实例
-    - 在创建 ClientWorker 实例时，其会启动一个周期性执行的定时任务：从 nacos config server 中获取到发生了变更的配置数据，并将这些数据更到本地缓存 cacheMap 中。nacos config client 中标注了 @RefreshScope 注解的实例获取到的更新数据就是取的 cacheMap 的 value 值。
+    - **在创建 ClientWorker 实例时，其会启动一个周期性执行的定时任务：从 nacos config server 中获取到发生了变更的配置数据，并将这些数据更到本地缓存 cacheMap 中。nacos config client 中标注了 @RefreshScope 注解的实例获取到的更新数据就是取的 cacheMap 的 value 值。**
     - cacheMap 是一个很重要得缓存 map 集合，cacheMap 的 key 为配置文件的 key，即 dataId+groupId，value 为存放着当前  nacos config client 中所需要的每个配置文件对应的本地缓存 CacheData。在  nacos config client 接收到来自于 nacos config server 端的变更数据后，会将这个变更数据更新到其对应的本地 CacheData 中。nacos config client 中标注了 @RefreshScope 注解的实例获取的更新数据就是从 CacheData 中获取的。
 
 <br>
 
-**nacos  config server 处理 nacos config client 配置变更检测请求**
+#### server 端处理 client 的配置变更检测请求
+
+**ConfigController.listener() → ConfigServletInner.doPollingConfig()**
 
 **总体思路**：
 
 当 nacos config server 接收到 nacos config client 发送过来的配置变更检测请求后，首先会解析出请求指定的要检测的所有目标配置文件，同时也会解析出 nacos config client 对处理方式的要求。server 的处理方式有四种类型：
 
-1. **短轮询**：没有长连接维护。nacos config server 接收到 nacos config client 发送的请求后，立即轮询检测所有目标配置文件是否发生了变更，并将检测结果立即返回给 nacos config client。不过这个返回的结果与 Nacos Client 的版本有着密切的关系，版本不同形成的结果也就不同。
+1. **短轮询**：**没有长连接维护**。nacos config server 接收到 nacos config client 发送的请求后，立即轮询检测所有目标配置文件是否发生了变更，并将检测结果立即返回给 nacos config client。不过这个返回的结果与 Nacos Client 的版本有着密切的关系，版本不同形成的结果也就不同。
 2. **固定时长的长轮询**：nacos config server 接收到 nacos config client 发送的请求后，会直接维护一个指定的固定时长的长连接，默认是 30s。长连接结束前会检测一次是否发生了变更。不过，在长连接维护期间是不检查变更情况的。
 3. **不挂起的非固定时长的长轮询**：与短轮询类似。nacos config server 接收到 nacos config client 发送的请求后，立即轮询检测所有目标配置文件是否发生了变更，并将检测结果立即返回给 nacos config client。与短轮询不同的是，其返回的结果与 Nacos Client 的版本无关。
 4. **挂起的非固定时长的长轮询**：nacos config server 接收到 nacos config client 发送的请求后，会先检测是否发生了配置变更。若发生了，则将结果直接返回给  nacos config client，并关闭链接。若未发生配置变更，则首先会将这个长轮询实例写入到一个缓存队列 allSubs 中，然后维护一个 30s 的长连接（这个时长用户不能自定义），时间结束，长连接直接关闭。在长连接维护期间，系统同时监听着配置变更事件，一旦发生变更，就会立即将变更发送给相应的长轮询对应的  nacos config client，并关闭连接。
@@ -755,7 +762,7 @@ nacos config server 是如何判断配置文件是否发生了变更？
 
 <br>
 
-**nacos config server 在非固定时长的长轮询期间对配置变更的感知**
+#### server 端在非固定时长的长轮询期间对配置变更的感知
 
 总体思路：
 
