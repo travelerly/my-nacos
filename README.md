@@ -197,12 +197,18 @@ public class NacosServiceRegistryAutoConfiguration {
 
 **NacosNamingService.registerInstance**(String serviceName, String groupName, Instance instance)
 
-- **BeatReactor.addBeatInfo(groupedServiceName, beatInfo)：心跳请求**
+1. **心跳请求**：BeatReactor.addBeatInfo(groupedServiceName, beatInfo)
+
     - 通过使用一个「one-shot action」一次性定时任务，来发送心跳请求，当 BeatTask 在执行完任务后会再创建一个相同的一次性定时任务，用于发送下一次的心跳请求，这样就实现了一次性定时任务的循环执行。
+
     - **发送心跳的定时任务是由一个新的线程执行的**。
-- **NamingProxy.registerService(groupedServiceName, groupName, instance)：注册请求**
+
+2. **注册请求**：NamingProxy.registerService(groupedServiceName, groupName, instance)
+
     - 如果 Nacos 指定了连接的 server 地址，则尝试连接这个指定的 server 地址，若连接失败，会尝试连接三次（默认值，可配置），若始终失败，会抛出异常；
+
     - 如果 Nacos 没有指定连接的 server 地址，Nacos 会首次按获取到其配置的所有 server 地址，然后再随机选择一个 server 进行连接，如果连接失败，其会以轮询方式再尝试连接下一台，直到将所有 server 都进行了尝试，如果最终没有任何一台能够连接成功，则会抛出异常；
+
     - 底层使用 Nacos 自定义的一个 HttpClientRequest「JdkHttpClientRequest」发起请求。JdkHttpClientRequest 实现了对 JDK 中的 HttpURLConnection 的封装。
 
 <br>
@@ -248,8 +254,8 @@ Nacos Discovery 应用在启动时会完成其必须的自动配置，会加载�
 
 Nacos Client 服务订阅与 Eureka Client 的服务订阅都是从 Server 端下载服务列表。但不同点是：
 
-- **Eureka Client 的服务订阅是定时获取 Server 端发生变更的服务实例并更新到本地注册表中；**
-- **Nacos Client 的服务订阅仅仅是定时从 Server 端获取当前服务的所有实例并更新到本地。**
+- Eureka Client 的服务订阅是定时从 Server 端获取**发生变更的服务**的所有实例并更新到本地注册表中；
+- Nacos Client 的服务订阅是定时从 Server 端获取**当前服务**的所有实例并更新到本地。
 
 <br>
 
@@ -492,7 +498,7 @@ Nacos Server 中，当一个 Service 创建完毕后，一般会为其执行三�
 
 **InstanceController.list() **
 
-在处理 Nacos Client 的订阅请求是， Nacos Server 主要完成了两项重要任务
+在处理 Nacos Client 的订阅请求时， Nacos Server 主要完成了两项重要任务
 
 1. 创建了该 Nacos Client 对应的 UDP 通信客户端 PushClient，并将其写入到了一个缓存 clientMap
 2. 从注册表中获取到指定服务的所有"可用的" Instance，并将其封装为 JSON
@@ -517,6 +523,8 @@ Nacos Client 接收 Nacos Server 发送的 UDP 请求：
 - PushReceiver 在创建的时候会异步执行其 run() 方法，这个 run() 方法开启了一个无限循环，用于接收 Nacos Server 发送的 UDP 请求，
 - PushReceiver 处理完请求数据后会向 Nacos Server 发送一个反馈的 UDP 通信请求
 
+> Nacos Client 在应用启动后，会创建 PushReceiver，它会启动一个无限循环，来接收 Nacos Server 端发送的 UDP 通信请求。
+
 <br>
 
 Nacos Server 与 Nacos Client 之间之所以能够保持 UDP 通信，是因为在  Nacos Server 中维护着一个缓存 Map，这个 map 是一个双层 map。外层 Map 的 key 为服务名称，格式为：**namespaceId##groupId@@微服务名**，value 为内存 map；而内层 map 的 key 为 代表 Instance 的字符串，value 为 Nacos Server 与 Nacos Client 进行 UDP 链接的 PushClient，这个 PushClient 是包含了这个 Nacos Client 的 port 等数据。**也就是说  Nacos Server 中维护着每一个注册在其中的 Nacos Client 对应的 UDP 通信客户端 PushClient**。
@@ -535,9 +543,9 @@ Nacos Server 与 Nacos Client 之间的 UDP 通信，Nacos Server 作为 UDP 通
 
 <br>
 
-Nacos Server 会在那种情况下引发其维护的注册表中的 Instance 的健康状态 healthy 发生变更？
+Nacos Server 会在哪种情况下引发其维护的注册表中的 Instance 的健康状态 healthy 发生变更？
 
-- 当 Nacos Server 端定时清除过期 Instance 的任务检测到某 Instance 超过 15s 未发送心跳时，会将其 healthy 状态由 true 变更为 false；
+- 当 Nacos Server 端定时清除过期 Instance 的任务时检测到某 Instance 超过 15s 未发送心跳时，会将其 healthy 状态由 true 变更为 false；
 - 当 Nacos Server 又重新收到 healthy=false 的 Instance 的心跳时，会将其 healthy 的状态由 false 变更为 true。
 
 <br>
@@ -694,7 +702,7 @@ Nacos Config Client 要加载的配置文件有三种
 
 #### 配置文件的动态更新
 
-一般情况下 Server 端的数据变更若要 Client 端感知到，可以选择两种模型：
+一般情况下 Server 端的数据变更，若要 Client 端感知到，可以选择两种模型：
 
 - Push 模型：当 Server 端的数据发生了变更，其会主动将更新推送给 Client 端。Push 模型适合于 Client 数量不多，且 Server 端数据变更比较频繁的场景。其实时性比较好，但其需要维护**长链接**，占用系统资源。
 - Pull 模型：需要 Client 定时查看 Server 端数据是否发生了变更。其实时性不好，切可能会产生数据更新的丢失。
