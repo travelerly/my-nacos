@@ -35,13 +35,13 @@ consistency 模块缺失 entity 包中的代码，需要下载插件 protoc 手�
 
 ### **Nacos 系统架构**
 
-![nacos 架构](doc/nacos架构.jpeg)
+<img src="doc/nacos架构.jpeg" alt="nacos 架构" style="zoom:50%;" />
 
 ---
 
 ### Nacos 数据模型
 
-![nacos数据模型](doc/nacos数据模型.jpg)
+<img src="doc/nacos数据模型.jpg" alt="nacos数据模型" style="zoom:50%;" />
 
 一个 **namespace** 下可以包含有很多的 **group**，一个 **group** 下可以包含有很多的 **service**。但 **service** 并不是一个简单的微服务提供者，而是一类提供者的集合。**service** 除了包含微服务名称外，还可以包含很多的 **Cluster**，每个 **Cluster** 中可以包含很多的 **Instance** 提供者，**Instance** 才是真正的微服务提供者主机。
 
@@ -64,7 +64,7 @@ spring:
                 ephemeral: true
 ```
 
-![目录位置](doc/目录位置.jpg)
+<img src="doc/目录位置.jpg" alt="目录位置" style="zoom:50%;" />
 
 **my_group%40%40colin-nacos-consumer@@myCluster**
 
@@ -223,7 +223,7 @@ Nacos Client 向 Nacos Server 发送的注册、订阅、获取状态等连接�
 
 **NacosNamingService.getServicesOfServer()**
 
-![Nacos客户端获取所有服务请求](doc/Nacos客户端获取所有服务请求.jpg)
+<img src="doc/Nacos客户端获取所有服务请求.jpg" alt="Nacos客户端获取所有服务请求" style="zoom:50%;" />
 
 触发原理
 
@@ -248,7 +248,7 @@ Nacos Discovery 应用在启动时会完成其必须的自动配置，会加载�
 
 触发原理
 
-![Nacos订阅服务](doc/Nacos订阅服务.jpg)
+<img src="doc/Nacos订阅服务.jpg" alt="Nacos订阅服务" style="zoom:50%;" />
 
 **Nacos Client 启动时会创建一个 NacosWatch 类实例，NacosWatch 实现了 SmartLifecycle 接口，应用启动后，会回调其 start() 方法， 即定时从 Nacos Server 端获取当前服务的所有实例并更新到本地。**
 
@@ -496,7 +496,7 @@ Nacos Server 中，当一个 Service 创建完毕后，一般会为其执行三�
 
 #### 处理客户端的订阅请求
 
-**InstanceController.list() **
+InstanceController.list()
 
 在处理 Nacos Client 的订阅请求时， Nacos Server 主要完成了两项重要任务
 
@@ -566,7 +566,7 @@ Nacos Server 中的 ServiceManager 管理着当前 Server 中的所有服务数�
 
 #### Nacos Config 系统架构
 
-![nacos-config系统架构](doc/nacos-config系统架构.jpg)
+<img src="doc/nacos-config系统架构.jpg" alt="nacos-config系统架构" style="zoom:33%;" />
 
 <br>
 
