@@ -572,7 +572,7 @@ Nacos Server 中的 ServiceManager 管理着当前 Server 中的所有服务数�
 
 #### Nacos Config 数据模型
 
-![nacos数据模型](doc/nacos数据模型.jpeg)
+![nacos数据模型](doc/nacos数据模型.jpg)
 
 Nacos Config 中有一个概念：tenant，其实就是 namespace，是 bootstrap.yml 文件属性 spring.cloud.nacos.config 中指定的 namespace。在代码中为了区分 spring.cloud.nacos.discovery 中指定的 namespace，所以在 Nacos Config 中使用 tenant。
 
