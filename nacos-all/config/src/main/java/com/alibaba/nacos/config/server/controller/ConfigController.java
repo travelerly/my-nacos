@@ -300,17 +300,18 @@ public class ConfigController {
     }
 
     /**
-     * The client listens for configuration changes.
-     *
      * 处理 nacos config client 发送的"配置变更"检测请求
+     * The client listens for configuration changes.
      */
     @PostMapping("/listener")
     @Secured(action = ActionTypes.READ, parser = ConfigResourceParser.class)
     public void listener(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         request.setAttribute("org.apache.catalina.ASYNC_SUPPORTED", true);
+
         // 从请求中获取要检测的目标配置文件字符串
         String probeModify = request.getParameter("Listening-Configs");
+
         if (StringUtils.isBlank(probeModify)) {
             throw new IllegalArgumentException("invalid probeModify");
         }
