@@ -170,7 +170,7 @@ private final NamingProxy serverProxy;
 
 1. spring-cloud-starter-alibaba-nacos-discovery→spring-cloud-commons→spring.factories→**AutoServiceRegistrationAutoConfiguration.class**→@Autowired AutoServiceRegistration
 2. spring-cloud-starter-alibaba-nacos-discovery→spring.factories→NacosServiceRegistryAutoConfiguration
-3. 即应用启动会自动注入 NacosServiceRegistryAutoConfiguration，它会创建 NacosAutoServiceRegistration，是 AutoServiceRegistration 的实现类
+3. 即应用启动会自动注入 NacosServiceRegistryAutoConfiguration，它会创建 **NacosAutoServiceRegistration**，是 AutoServiceRegistration 的实现类
 
 > 若要使得某个注册中心与 Spring Cloud 整合后，完成客户端-Client 的自动注册，那么就需要该注册中心的客户端的依赖实现 AutoServiceRegistrationAutoConfiguration 的规范，确切的说是要自定义一个 Starter，完成 AutoServiceRegistration 实例的创建与注入。
 
@@ -197,19 +197,39 @@ public class NacosServiceRegistryAutoConfiguration {
 
 **NacosNamingService.registerInstance**(String serviceName, String groupName, Instance instance)
 
-1. **心跳请求**：BeatReactor.addBeatInfo(groupedServiceName, beatInfo)
+```java
+// Nacos Client 的注册(包括注册与心跳)
+public void registerInstance(String serviceName, String groupName, Instance instance) throws NacosException {
+    NamingUtils.checkInstanceIsLegal(instance);
+    // 生成格式：my_group@@colin-nacos-consumer
+    String groupedServiceName = NamingUtils.getGroupedName(serviceName, groupName);
+    // 判断当前实例是否为临时实例「默认为临时实例」
+    if (instance.isEphemeral()) {
+        // 构建心跳信息数据
+        BeatInfo beatInfo = beatReactor.buildBeatInfo(groupedServiceName, instance);
+        // 临时实例，向服务端发送心跳请求。「定时任务」
+        beatReactor.addBeatInfo(groupedServiceName, beatInfo);
+    }
+    // 向服务端发送注册请求
+    serverProxy.registerService(groupedServiceName, groupName, instance);
+}
+```
 
+1. **心跳请求**：BeatReactor.addBeatInfo(groupedServiceName, beatInfo)
     - 通过使用一个「one-shot action」一次性定时任务，来发送心跳请求，当 BeatTask 在执行完任务后会再创建一个相同的一次性定时任务，用于发送下一次的心跳请求，这样就实现了一次性定时任务的循环执行。
 
     - **发送心跳的定时任务是由一个新的线程执行的**。
 
+    - groupedServiceName 的格式：**my_group@@colin-nacos-consumer**
+
+    - beatInfo：心跳信息数据
+
 2. **注册请求**：NamingProxy.registerService(groupedServiceName, groupName, instance)
-
-    - 如果 Nacos 指定了连接的 server 地址，则尝试连接这个指定的 server 地址，若连接失败，会尝试连接三次（默认值，可配置），若始终失败，会抛出异常；
-
-    - 如果 Nacos 没有指定连接的 server 地址，Nacos 会首次按获取到其配置的所有 server 地址，然后再随机选择一个 server 进行连接，如果连接失败，其会以轮询方式再尝试连接下一台，直到将所有 server 都进行了尝试，如果最终没有任何一台能够连接成功，则会抛出异常；
-
-    - 底层使用 Nacos 自定义的一个 HttpClientRequest「JdkHttpClientRequest」发起请求。JdkHttpClientRequest 实现了对 JDK 中的 HttpURLConnection 的封装。
+- 如果 Nacos 指定了连接的 server 地址，则尝试连接这个指定的 server 地址，若连接失败，会尝试连接三次（默认值，可配置），若始终失败，会抛出异常；
+  
+- 如果 Nacos 没有指定连接的 server 地址，Nacos 会首次按获取到其配置的所有 server 地址，然后再随机选择一个 server 进行连接，如果连接失败，其会以轮询方式再尝试连接下一台，直到将所有 server 都进行了尝试，如果最终没有任何一台能够连接成功，则会抛出异常；
+  
+- 底层使用 Nacos 自定义的一个 HttpClientRequest「JdkHttpClientRequest」发起请求。JdkHttpClientRequest 实现了对 JDK 中的 HttpURLConnection 的封装。
 
 <br>
 

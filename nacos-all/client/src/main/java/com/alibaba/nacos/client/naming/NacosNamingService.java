@@ -512,8 +512,8 @@ public class NacosNamingService implements NamingService {
         return getServicesOfServer(pageNo, pageSize, Constants.DEFAULT_GROUP, selector);
     }
 
-    @Override
     // 客户端获取所有服务的请求
+    @Override
     public ListView<String> getServicesOfServer(int pageNo, int pageSize, String groupName, AbstractSelector selector)
             throws NacosException {
         return serverProxy.getServiceList(pageNo, pageSize, groupName, selector);

@@ -70,10 +70,12 @@ public class NacosServiceRegistryAutoConfiguration {
 			NacosServiceRegistry registry,
 			AutoServiceRegistrationProperties autoServiceRegistrationProperties,
 			NacosRegistration registration) {
-		// 应用启动会注入 NacosServiceRegistryAutoConfiguration，就会创建 NacosAutoServiceRegistration
-		// NacosAutoServiceRegistration 是 AutoServiceRegistration 的实现类，即实现了对 web 容器启动初始化的监听
-		// Tomcat 启动后，就会触发其 onApplicationEvent() 回调方法的执行
-		// 层层调用就会执行 NacosNamingService.registerInstance()，即 Nacos Client 的注册
+		/**
+		 * 应用启动会注入 NacosServiceRegistryAutoConfiguration，就会创建 NacosAutoServiceRegistration
+		 * NacosAutoServiceRegistration 是 AutoServiceRegistration 的实现类，即实现了对 web 容器启动初始化的监听
+		 * Tomcat 启动后，就会触发其 onApplicationEvent() 回调方法的执行
+		 * 层层调用就会执行 NacosNamingService.registerInstance()，即 Nacos Client 的注册
+		 */
 		return new NacosAutoServiceRegistration(registry,
 				autoServiceRegistrationProperties, registration);
 	}
