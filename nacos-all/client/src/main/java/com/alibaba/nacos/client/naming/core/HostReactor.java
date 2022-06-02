@@ -68,8 +68,10 @@ public class HostReactor implements Closeable {
     // serviceInfoMap：客户端本地注册表，key 为 groupId@@微服务名称@@cluster名称，value 为 ServiceInfo。
     private final Map<String, ServiceInfo> serviceInfoMap;
 
-    // 用于存放当前正在发生变更的服务，key：serviceName，groupId@@微服务名称；value：new Object()，没有实际意义。
-    // 其就是利用了 map 中 key 的唯一性特征，标记某个服务的 ServiceInfo 发生了变更
+    /**
+     * 用于存放当前正在发生变更的服务，key：serviceName，groupId@@微服务名称；value：new Object()，没有实际意义。
+     * 其就是利用了 map 中 key 的唯一性特征，标记某个服务的 ServiceInfo 发生了变更
+     */
     private final Map<String, Object> updatingMap;
 
     private final PushReceiver pushReceiver;
@@ -118,11 +120,13 @@ public class HostReactor implements Closeable {
         this.pushEmptyProtection = pushEmptyProtection;
         this.updatingMap = new ConcurrentHashMap<String, Object>();
         this.failoverReactor = new FailoverReactor(this, cacheDir);
-        // 创建一个 PushReceiver 实例，用于 UDP 通信
+        // 创建接收 nacos 服务端推送信息的组件。创建一个 PushReceiver 实例，用于 UDP 通信。
         this.pushReceiver = new PushReceiver(this);
         this.notifier = new InstancesChangeNotifier();
 
+        // 给 InstanceChangeEvent 事件绑定对应的事件发布者
         NotifyCenter.registerToPublisher(InstancesChangeEvent.class, 16384);
+        // 注册一个 InstanceChangeEvent 事件的事件订阅者
         NotifyCenter.registerSubscriber(notifier);
     }
 
@@ -142,6 +146,7 @@ public class HostReactor implements Closeable {
      * @param eventListener custom listener
      */
     public void subscribe(String serviceName, String clusters, EventListener eventListener) {
+        // 注册监听器
         notifier.registerListener(serviceName, clusters, eventListener);
         // 定时从 Nacos Server 端获取当前服务的所有实例并更新到本地
         getServiceInfo(serviceName, clusters);
@@ -163,6 +168,10 @@ public class HostReactor implements Closeable {
     }
 
     /**
+     * 将来自于 Nacos 服务端推送过来的变更的服务数据更新到当前 Nacos Client 的本地注册表中。
+     * 处理从 nacos 服务端获取到的服务最新实例结果，该方法有两种情况会被调用：
+     * 1.主动调用 nacos 服务端接口，服务端返回结果后调用；
+     * 2.nacos 服务端推送服务最新的实例结果，在客户端接口到推送的时候会去调用。
      * Process service json.
      *
      * @param json service json
@@ -171,19 +180,19 @@ public class HostReactor implements Closeable {
      * 此方法的前提是：服务端返回的数据为最新数据
      */
     public ServiceInfo processServiceJson(String json) {
-        // 解析服务端返回的 ServiceInfo 数据
+        // 解析服务端返回的 ServiceInfo 数据。将数据序列化成一个 ServiceInfo 对象
         ServiceInfo serviceInfo = JacksonUtils.toObj(json, ServiceInfo.class);
-        // 获取本地注册表中目标服务的 ServiceInfo 数据，即本地注册表中的旧数据
+        // 获取本地注册表(serviceInfoMap)中目标服务的 ServiceInfo 数据，即本地注册表中的旧数据
         ServiceInfo oldService = serviceInfoMap.get(serviceInfo.getKey());
 
         if (pushEmptyProtection && !serviceInfo.validate()) {
-            //empty or error push, just ignore
+            // 忽略掉返回参数为空，或返回错误数据的情况。empty or error push, just ignore。
             return oldService;
         }
 
         boolean changed = false;
 
-        if (oldService != null) {
+        if (oldService != null) { // 说明之前客户端有查找过该服务下的实例
             // 极端情况记录日志，几乎不可能发生此种情况
             if (oldService.getLastRefTime() > serviceInfo.getLastRefTime()) {
                 NAMING_LOGGER.warn("out of date data received, old-t: " + oldService.getLastRefTime() + ", new-t: "
@@ -192,16 +201,21 @@ public class HostReactor implements Closeable {
 
             // 将服务端返回的新数据替换掉本地注册表中对应的旧数据
             serviceInfoMap.put(serviceInfo.getKey(), serviceInfo);
-            // 遍历本地注册表中当前服务的所有实例的旧数据，并存入到一个旧实例数据缓存 Map 中。
-            // oldHostMap，ip:port 作为 key，Instance 作为 value
+
+            /**
+             * 遍历本地注册表中当前服务的所有实例的旧数据，并存入到一个旧实例数据缓存 Map 中。
+             * oldHostMap，ip:port 作为 key，Instance 作为 value
+             */
             Map<String, Instance> oldHostMap = new HashMap<String, Instance>(oldService.getHosts().size());
             for (Instance host : oldService.getHosts()) {
                 // 将当前遍历的 Instance 主机的 ip:port 作为 key，Instance 作为 value 存入到新建的缓存 map 中「oldHostMap」。
                 oldHostMap.put(host.toInetAddr(), host);
             }
 
-            // 遍历服务端返回的当前服务的所有实例的新数据，并存入到一个新实例数据缓存 Map 中。
-            // newHostMap，ip:port 作为 key，Instance 作为 value
+            /**
+             * 遍历服务端返回的当前服务的所有实例的新数据，并存入到一个新实例数据缓存 Map 中。
+             * newHostMap，ip:port 作为 key，Instance 作为 value
+             */
             Map<String, Instance> newHostMap = new HashMap<String, Instance>(serviceInfo.getHosts().size());
             for (Instance host : serviceInfo.getHosts()) {
                 // 将当前遍历的 Instance 主机的 ip:port 作为 key，Instance 作为 value 存入到新建的缓存 map 中「newHostMap」。
@@ -222,16 +236,20 @@ public class HostReactor implements Closeable {
             for (Map.Entry<String, Instance> entry : newServiceHosts) {
                 Instance host = entry.getValue();
                 String key = entry.getKey();
-                // 在注册表中存在该 ip:port 的 key，当这两个 Instance 不同，则将这个 Instance 存入到 modHosts 中。
-                // 若服务端返回的主机数据的 key 在旧缓存数据中存在，但对应的实例数据 Instance 不同，则将该实例数据 Instance 存入到缓存 modHosts 中。
+                /**
+                 * 在注册表中存在该 ip:port 的 key，说明是同一个实例，但新的实例与旧的实例之间的信息系不同，说明实例被修改过，
+                 * 则将这个实例存入到 modHosts 中，即存入到被修改集合中。
+                 */
                 if (oldHostMap.containsKey(key) && !StringUtils
                         .equals(host.toString(), oldHostMap.get(key).toString())) {
                     modHosts.add(host);
                     continue;
                 }
 
-                // 在注册表中不存在该 ip:port 的 key，说明这个主机是新增的，则将其存入到 newHosts 中。
-                // 若服务端返回的主机数据的 key 在旧缓存数据中不存在，则说明这个主机是新增的，则将其存入到 newHosts 中。
+                /**
+                 * 在注册表中不存在该 ip:port 的 key，说明这个主机是新增的，则将其存入到 newHosts 中，即加入到新增集合中。
+                 * 若服务端返回的主机数据的 key 在旧缓存数据中不存在，则说明这个主机是新增的，则将其存入到 newHosts 中。
+                 */
                 if (!oldHostMap.containsKey(key)) {
                     newHosts.add(host);
                 }
@@ -245,8 +263,10 @@ public class HostReactor implements Closeable {
                     continue;
                 }
 
-                // 本地注册表中存在，但服务端返回的数据中不存在，说明这个 Instance 需要被删除，即将其存入到 remvHosts 中。
-                // 若新实例数据缓存中不包含旧实例数据，则说明该实例需要被删除，所以将该数据存入到删除缓存中。「remvHosts」
+                /**
+                 * 本地注册表中存在，但服务端返回的数据中不存在，说明这个 Instance 需要被删除，即将其存入到 remvHosts 中，即加入到被移除集合中。
+                 * 若新实例数据缓存中不包含旧实例数据，则说明该实例需要被删除，所以将该数据存入到删除缓存中。「remvHosts」
+                 */
                 if (!newHostMap.containsKey(key)) {
                     remvHosts.add(host);
                 }
@@ -267,26 +287,35 @@ public class HostReactor implements Closeable {
 
             if (modHosts.size() > 0) {
                 changed = true;
-                // 变更心跳信息 BeatInfo
+                // 变更心跳信息 BeatInfo。即更新合并后的数据(modHosts)的心跳信息 BeatInfo。
                 updateBeatInfo(modHosts);
                 NAMING_LOGGER.info("modified ips(" + modHosts.size() + ") service: " + serviceInfo.getKey() + " -> "
                         + JacksonUtils.toJson(modHosts));
             }
 
             serviceInfo.setJsonFromServer(json);
+
             // 只要发生了变更，就将这个发生了变更的 ServiceInfo 记录到一个缓存队列中。
             if (newHosts.size() > 0 || remvHosts.size() > 0 || modHosts.size() > 0) {
+                /**
+                 * 通过 InstancesChangeEvent 事件对应的事件发布者去发布一个 InstanceChangeEvent 事件，
+                 * 发布完之后，该事件发布者对应的事件订阅者就能够进行监听回调。
+                 */
                 NotifyCenter.publishEvent(new InstancesChangeEvent(serviceInfo.getName(), serviceInfo.getGroupName(),
                         serviceInfo.getClusters(), serviceInfo.getHosts()));
                 DiskCache.write(serviceInfo, cacheDir);
             }
 
-        } else {
+        } else { // 本地注册表中没有当前服务的相关数据，说明是第一次请求该服务实例，则将服务端返回的服务数据，直接保存进本地注册表中。
             changed = true;
             NAMING_LOGGER.info("init new ips(" + serviceInfo.ipCount() + ") service: " + serviceInfo.getKey() + " -> "
                     + JacksonUtils.toJson(serviceInfo.getHosts()));
             // 将服务端返回的 ServiceInfo 存储到本地注册表中
             serviceInfoMap.put(serviceInfo.getKey(), serviceInfo);
+            /**
+             * 通过 InstancesChangeEvent 事件对应的事件发布者去发布一个 InstanceChangeEvent 事件，
+             * 发布完之后，该事件发布者对应的事件订阅者就能够进行监听回调。
+             */
             NotifyCenter.publishEvent(new InstancesChangeEvent(serviceInfo.getName(), serviceInfo.getGroupName(),
                     serviceInfo.getClusters(), serviceInfo.getHosts()));
             serviceInfo.setJsonFromServer(json);
@@ -304,6 +333,7 @@ public class HostReactor implements Closeable {
     }
 
     private void updateBeatInfo(Set<Instance> modHosts) {
+        // 遍历处理合并后的数据的心跳信息
         for (Instance instance : modHosts) {
             String key = beatReactor.buildKey(instance.getServiceName(), instance.getIp(), instance.getPort());
             if (beatReactor.dom2Beat.containsKey(key) && instance.isEphemeral()) {
@@ -330,7 +360,14 @@ public class HostReactor implements Closeable {
         return null;
     }
 
-    // 获取目标服务(列表)
+    /**
+     * 获取目标服务(列表)
+     * 调用此方法可以获取到指定服务下指定集群的所有服务实例，并且调用的客户端还会被 nacos 服务端视为已订阅客户端，
+     * 该方法用于客户端订阅拉去服务的模式
+     * @param serviceName 指定的服务名称
+     * @param clusters 指定的集群集合（逗号分隔）
+     * @return
+     */
     public ServiceInfo getServiceInfo(final String serviceName, final String clusters) {
 
         NAMING_LOGGER.debug("failover-mode: " + failoverReactor.isFailoverSwitch());
@@ -343,21 +380,25 @@ public class HostReactor implements Closeable {
         // 从当前客户端的本地注册表中获取当前服务
         ServiceInfo serviceObj = getServiceInfo0(serviceName, clusters);
 
-        if (null == serviceObj) {
+        if (null == serviceObj) { // 第一次获取该服务集群对应的实例
+
             // 本地注册表中没有该服务，则创建一个空的服务「没有任何提供者实例 Instance 的 ServiceInfo」
             serviceObj = new ServiceInfo(serviceName, clusters);
             // 将空服务放入客户端本地注册表中。serviceInfoMap：客户端本地注册表，key 为 groupId@@微服务名称@@cluster名称，value 为 ServiceInfo。
             serviceInfoMap.put(serviceObj.getKey(), serviceObj);
+
             /**
              * 临时缓存，利用 map 的 key 不能重复的特性；只要有服务名称存在这个缓存中，就表示当前这个服务正在被更新。
              * 准备要更新 serviceName 的服务了，就先将其名称存入临时缓存 map 中。
+             * 对该服务进行占位。
              */
             updatingMap.put(serviceName, new Object());
-            // 更新本地注册表中的 serviceName 的服务
+            // 向 nacos 服务端发送请求，获取指定服务的实例数据，并更新本地注册表。
             updateServiceNow(serviceName, clusters);
-            // 更新完毕，将该 serviceName 服务从临时缓存中删除。
+            // 更新完毕，将该 serviceName 服务从临时缓存中删除。即删除占位。
             updatingMap.remove(serviceName);
-        } else if (updatingMap.containsKey(serviceName)) {
+
+        } else if (updatingMap.containsKey(serviceName)) { // 至此说明当前服务正在被更新，即有服务发生变更，在临时缓存中有占位。
 
             if (UPDATE_HOLD_INTERVAL > 0) {
                 // hold a moment waiting for update finish
@@ -365,7 +406,8 @@ public class HostReactor implements Closeable {
                     try {
                         /**
                          * 若当前注册表中已经存在该服务，则需要先查看一下临时缓存 map 中是否存在该服务
-                         * 若临时缓存 map 中存在该服务，则说明这个服务正在被更新，所以本次操作需暂停一会「默认五秒钟」。
+                         * 若临时缓存 map 中存在该服务，则说明这个服务正在被更新，所以本次操作需阻塞一会，
+                         * 直到前一个线程获取到实例集合数据并缓存到内存中的时候才会被唤醒，或者超时唤醒，默认的超时时间是 5s。
                          */
                         serviceObj.wait(UPDATE_HOLD_INTERVAL);
                     } catch (InterruptedException e) {
@@ -375,6 +417,7 @@ public class HostReactor implements Closeable {
                 }
             }
         }
+
         // 启动定时任务，定时更新本地注册表中当前服务的数据
         scheduleUpdateIfAbsent(serviceName, clusters);
         // serviceInfoMap：客户端本地注册表，key 为 groupId@@微服务名称@@cluster名称，value 为 ServiceInfo。
@@ -415,16 +458,17 @@ public class HostReactor implements Closeable {
     }
 
     /**
+     * 从服务端获取到指定服务下的所有实例，并且当前客户端还会被服务端所绑定作为推送的目标客户端。
      * Update service now.
      *
-     * @param serviceName service name
-     * @param clusters    clusters
+     * @param serviceName service name 指定的服务端名称
+     * @param clusters    clusters 指定的集群集合
      */
     public void updateService(String serviceName, String clusters) throws NacosException {
         // 从本地注册表中获取目标服务的数据
         ServiceInfo oldService = getServiceInfo0(serviceName, clusters);
         try {
-            // 向 server 提交一个"GET"请求，获取目标服务「serviceName」的 serviceInfo，返回结果是 JSON 格式
+            // 向 server 提交一个"GET"请求，获取指定服务所有实例，同时当前客户端还会订阅该指定的服务，返回结果是 JSON 格式
             String result = serverProxy.queryList(serviceName, clusters, pushReceiver.getUdpPort(), false);
 
             if (StringUtils.isNotEmpty(result)) {
@@ -434,6 +478,7 @@ public class HostReactor implements Closeable {
         } finally {
             if (oldService != null) {
                 synchronized (oldService) {
+                    // 解除上层线程的阻塞。
                     oldService.notifyAll();
                 }
             }

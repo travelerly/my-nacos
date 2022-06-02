@@ -79,16 +79,23 @@ public class BeatReactor implements Closeable {
      */
     public void addBeatInfo(String serviceName, BeatInfo beatInfo) {
         NAMING_LOGGER.info("[BEAT] adding beat: {} to beat map.", beatInfo);
-        // key 的格式：my_group@@colin-nacos-consumer#192.168.1.8#8081
-        // groupId@@微服务名#ip#port。这个 key 固定了主机
+        /**
+         * key 的格式：my_group@@colin-nacos-consumer#192.168.1.8#8081
+         * groupId@@微服务名#ip#port。这个 key 固定了主机
+         */
         String key = buildKey(serviceName, beatInfo.getIp(), beatInfo.getPort());
         BeatInfo existBeat = null;
+
         //fix #1733。dom2Beat 是一个缓存 map，其 key 为主机，value 为该主机发送心跳的信息 beatinfo。
         if ((existBeat = dom2Beat.remove(key)) != null) {
             existBeat.setStopped(true);
         }
+
         dom2Beat.put(key, beatInfo);
-        // 开启一个发送心跳的定时任务（one-shot action：一次性任务，BeatTask 会在任务执行完成时再开启一个任务，使得心跳任务是一个重复的循环任务）
+        /**
+         * 开启一个发送心跳的定时任务
+         * one-shot action：一次性任务，BeatTask 会在任务执行完成时再开启一个任务，使得心跳任务是一个重复的循环任务）
+         */
         executorService.schedule(new BeatTask(beatInfo), beatInfo.getPeriod(), TimeUnit.MILLISECONDS);
         MetricsMonitor.getDom2BeatSizeMonitor().set(dom2Beat.size());
     }
@@ -182,6 +189,7 @@ public class BeatReactor implements Closeable {
                 if (result.has(CommonParams.CODE)) {
                     code = result.get(CommonParams.CODE).asInt();
                 }
+
                 // 若在 server 端没有找到该 client，则 server 返回的状态码是"20404"
                 if (code == NamingResponseCode.RESOURCE_NOT_FOUND) {
                     Instance instance = new Instance();
@@ -205,7 +213,7 @@ public class BeatReactor implements Closeable {
                         JacksonUtils.toJson(beatInfo), ex.getErrCode(), ex.getErrMsg());
 
             }
-            // 又启动一个发送心跳的定时任务
+            // 再次启动一个发送心跳的定时任务
             executorService.schedule(new BeatTask(beatInfo), nextTime, TimeUnit.MILLISECONDS);
         }
     }

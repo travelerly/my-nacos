@@ -539,8 +539,10 @@ public class NamingProxy implements Closeable {
             // 未指定连接的服务端域名
             Random random = new Random(System.currentTimeMillis());
             int index = random.nextInt(servers.size());
-            // 遍历所有 server，从中随机选择一个 server 进行连接。server 索引为随机数 index
-            // 若向该 server 连接失败，则采用轮询方式继续尝试连接下一个 server，直到连接成功为止。重试次数为 server 列表长度
+            /**
+             * 遍历所有 server，从中随机选择一个 server 进行连接。server 索引为随机数 index
+             * 若向该 server 连接失败，则采用轮询方式继续尝试连接下一个 server，直到连接成功为止。重试次数为 server 列表长度
+             */
             for (int i = 0; i < servers.size(); i++) {
                 String server = servers.get(index);
                 try {

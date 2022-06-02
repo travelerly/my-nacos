@@ -66,6 +66,7 @@ public class DefaultPublisher extends Thread implements EventPublisher {
         this.eventType = type;
         this.queueMaxSize = bufferSize;
         this.queue = new ArrayBlockingQueue<Event>(bufferSize);
+        // 开启子线程，在子线程中会不断地从队列中获取到事件并进行处理
         start();
     }
     
@@ -93,7 +94,10 @@ public class DefaultPublisher extends Thread implements EventPublisher {
     public void run() {
         openEventHandler();
     }
-    
+
+    /**
+     * 处理事件，子线程执行
+     */
     void openEventHandler() {
         try {
             
@@ -101,6 +105,7 @@ public class DefaultPublisher extends Thread implements EventPublisher {
             int waitTimes = 60;
             // To ensure that messages are not lost, enable EventHandler when
             // waiting for the first Subscriber to register
+            // 如果客户端没有给该事件发布者设置对应的事件订阅者，那么在子线程执行 60s 后，都会吧未处理的事件从队列中移除。
             for (; ; ) {
                 if (shutdown || hasSubscriber() || waitTimes <= 0) {
                     break;
@@ -114,6 +119,7 @@ public class DefaultPublisher extends Thread implements EventPublisher {
                     break;
                 }
                 final Event event = queue.take();
+                // 接收并通知订阅服务器来处理事件。
                 receiveEvent(event);
                 UPDATER.compareAndSet(this, lastEventSequence, Math.max(lastEventSequence, event.sequence()));
             }
@@ -139,7 +145,12 @@ public class DefaultPublisher extends Thread implements EventPublisher {
     @Override
     public boolean publish(Event event) {
         checkIsStart();
+        /**
+         * 往事件队列中添加一个事件，是一个异步操作，
+         * DefaultPublisher 在初始化时，会开启一个子线程，在子线程中会不断地从队列中获取到事件并进行处理
+         */
         boolean success = this.queue.offer(event);
+        // 如果向队列添加事件失败，则手动处理该事件
         if (!success) {
             LOGGER.warn("Unable to plug in due to interruption, synchronize sending time, event : {}", event);
             receiveEvent(event);
@@ -165,14 +176,14 @@ public class DefaultPublisher extends Thread implements EventPublisher {
     }
     
     /**
-     * Receive and notifySubscriber to process the event.
+     * 接收并通知订阅服务器来处理事件。Receive and notifySubscriber to process the event.
      *
-     * @param event {@link Event}.
+     * @param event 通知事件。{@link Event}.
      */
     void receiveEvent(Event event) {
         final long currentEventSequence = event.sequence();
         
-        // Notification single event listener
+        // 遍历所有事件订阅者去处理事件。Notification single event listener
         for (Subscriber subscriber : subscribers) {
             // Whether to ignore expiration events
             if (subscriber.ignoreExpireEvent() && lastEventSequence > currentEventSequence) {
@@ -183,10 +194,16 @@ public class DefaultPublisher extends Thread implements EventPublisher {
             
             // Because unifying smartSubscriber and subscriber, so here need to think of compatibility.
             // Remove original judge part of codes.
+            // 通知指定的订阅者出来事件。
             notifySubscriber(subscriber, event);
         }
     }
-    
+
+    /**
+     * 通知指定的订阅者出来事件。
+     * @param subscriber 订阅者。{@link Subscriber}
+     * @param event      通知事件。{@link Event}
+     */
     @Override
     public void notifySubscriber(final Subscriber subscriber, final Event event) {
         
@@ -200,10 +217,11 @@ public class DefaultPublisher extends Thread implements EventPublisher {
         };
         
         final Executor executor = subscriber.executor();
-        
+
+        // 指定了线程池，放到线程池中去执行订阅回调，即执行 InstancesChangeNotifier 的 onEvent() 方法
         if (executor != null) {
             executor.execute(job);
-        } else {
+        } else { // 没有指定线程池，则直接执行订阅回调，即执行 InstancesChangeNotifier 的 onEvent() 方法
             try {
                 job.run();
             } catch (Throwable e) {

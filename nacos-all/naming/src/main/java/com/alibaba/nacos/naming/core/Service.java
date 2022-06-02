@@ -271,13 +271,17 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
             }
         }
 
+        // 遍历最新的实例集合
         for (Map.Entry<String, List<Instance>> entry : ipMap.entrySet()) {
-            //make every ip mine
+            // 获取这个集群下所有的最新实例。make every ip mine
             List<Instance> entryIPs = entry.getValue();
+            // 对该服务下每一个集群更新最新的实例集合
             clusterMap.get(entry.getKey()).updateIps(entryIPs, ephemeral);
         }
 
+        // 更新修改时间
         setLastModifiedMillis(System.currentTimeMillis());
+        // 服务变动之后推送最新实例信息给客户端。发送变更事件，触发监听器回调。
         getPushService().serviceChanged(this);
         StringBuilder stringBuilder = new StringBuilder();
 

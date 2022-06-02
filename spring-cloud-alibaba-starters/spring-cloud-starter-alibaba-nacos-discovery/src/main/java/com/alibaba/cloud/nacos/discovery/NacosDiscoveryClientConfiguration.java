@@ -60,8 +60,11 @@ public class NacosDiscoveryClientConfiguration {
 	public NacosWatch nacosWatch(NacosServiceManager nacosServiceManager,
 			NacosDiscoveryProperties nacosDiscoveryProperties,
 			ObjectProvider<ThreadPoolTaskScheduler> taskExecutorObjectProvider) {
-		// NacosWatch 实现了 SmartLifecycle 接口，应用启动后，会回调其 start() 方法， start() 方法会向 Nacos Server 提交服务订阅请求。
-		// 服务订阅即定时从 Nacos Server 端获取当前服务的所有实例并更新到本地。
+		/**
+		 * NacosWatch 实现了 SmartLifecycle 接口，应用启动后，会回调其 start() 方法，
+		 * start() 方法会向 Nacos Server 提交服务订阅请求。
+		 * 服务订阅，即定时从 Nacos Server 端获取当前服务的所有实例并更新到本地。
+		 */
 		return new NacosWatch(nacosServiceManager, nacosDiscoveryProperties,
 				taskExecutorObjectProvider);
 	}

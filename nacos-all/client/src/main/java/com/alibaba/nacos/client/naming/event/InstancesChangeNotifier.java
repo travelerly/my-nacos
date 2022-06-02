@@ -43,13 +43,14 @@ public class InstancesChangeNotifier extends Subscriber<InstancesChangeEvent> {
     private final Object lock = new Object();
     
     /**
-     * register listener.
+     * 注册监听器。register listener.
      *
-     * @param serviceName combineServiceName, such as 'xxx@@xxx'
-     * @param clusters    clusters, concat by ','. such as 'xxx,yyy'
-     * @param listener    custom listener
+     * @param serviceName 服务名称，'组名@@服务名'。combineServiceName, such as 'xxx@@xxx'
+     * @param clusters    集群名称，逗号分割。clusters, concat by ','. such as 'xxx,yyy'
+     * @param listener    事件监听器。custom listener
      */
     public void registerListener(String serviceName, String clusters, EventListener listener) {
+        // key：serviceName@@clusters
         String key = ServiceInfo.getKey(serviceName, clusters);
         ConcurrentHashSet<EventListener> eventListeners = listenerMap.get(key);
         if (eventListeners == null) {
@@ -61,6 +62,7 @@ public class InstancesChangeNotifier extends Subscriber<InstancesChangeEvent> {
                 }
             }
         }
+        // 给指定的集群注册一个事件监听器。
         eventListeners.add(listener);
     }
     
@@ -103,25 +105,35 @@ public class InstancesChangeNotifier extends Subscriber<InstancesChangeEvent> {
         }
         return serviceInfos;
     }
-    
+
+    // 订阅者订阅事件的回调
     @Override
     public void onEvent(InstancesChangeEvent event) {
+        // key：name@@clusters
         String key = ServiceInfo.getKey(event.getServiceName(), event.getClusters());
+        // 根据 key 从 listenerMap 中获取对应的 eventListeners 监听器
         ConcurrentHashSet<EventListener> eventListeners = listenerMap.get(key);
         if (CollectionUtils.isEmpty(eventListeners)) {
+            // 跳过没有监听器的场景
             return;
         }
+
+        // 遍历回调所有的监听器
         for (final EventListener listener : eventListeners) {
             final com.alibaba.nacos.api.naming.listener.Event namingEvent = transferToNamingEvent(event);
+            // 如果当前监听器的类型是 AbstractEventListener，并且指定了回调的线程池，则调用其 onEvent 方法
             if (listener instanceof AbstractEventListener && ((AbstractEventListener) listener).getExecutor() != null) {
                 ((AbstractEventListener) listener).getExecutor().execute(new Runnable() {
                     @Override
                     public void run() {
+                        // 在线程池中执行回调逻辑
                         listener.onEvent(namingEvent);
                     }
                 });
                 continue;
             }
+
+            // 普通类型的监听器直接执行回调方法
             listener.onEvent(namingEvent);
         }
     }

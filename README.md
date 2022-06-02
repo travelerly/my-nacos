@@ -60,7 +60,7 @@ spring:
                 group: my_group
                 # 集群名，默认为 DEFAULT
                 cluster-name: myCluster
-                # 是否是临时实例，默认为 true：是临时实例，false：永久实例
+                # 是否是临时实例，默认为 true：是临时实例；false：永久实例
                 ephemeral: true
 ```
 
@@ -75,7 +75,7 @@ spring:
 
 <br>
 
-**临时实例**与**持久实例**的实例的存储位置与健康检测机制是不同的。
+**临时实例**与**持久实例**的存储位置与健康检测机制是不同的。
 
 1. **临时实例**：默认情况。服务实例仅会注册在 Nacos 内存中，不会持久化到 Nacos 磁盘。其健康检测机制为 Client 模式，即 Client 主动向 Server 上报其健康状态（属于推模式）。默认心跳间隔为 5s；并且在 15s 内 Server 端未收到 Client 心跳，则会将其标记为“**不健康**”状态；若在 30s 内收到了 Client 心跳，则重新恢复到”**健康**“状态，否则该实例将从 Server 端内存中**自动**清除。**适用于实例的弹性扩容场景**。
 2. **持久实例**：服务实例不仅会注册到 Nacos 内存，同时也会被持久化到 Nacos 磁盘，其健康检测机制为 Server 模式，即 Server 会主动去检测 Client 的健康状态（属于拉模式）。默认每 20s 检测一次，健康检测失败后服务实例会被标记为“**不健康**”状态，但不会被清除，因为其是持久化在磁盘上了，因此对于”**不健康**“的实例的清除，需要专门进行。
@@ -108,7 +108,7 @@ public class Instance extends com.alibaba.nacos.api.naming.pojo.Instance impleme
 }
 ```
 
-serviceName：并不是简单的微服务名称，其格式：groupId@@微服务名称，表示这是一个微服务名称，之所以要在微服务名称前加上 groupId作为微服务名称，因为 Nacos 中允许在不同的 group 中存在相同的**微服务名称**的微服务应用，而这些应用提供不同的服务。
+serviceName：并不是简单的微服务名称，其格式：groupId@@微服务名称，表示这是一个微服务名称，之所以要在微服务名称前加上 groupId 作为微服务名称，因为 Nacos 中允许在不同的 group 中存在相同的**微服务名称**的微服务应用，而这些应用提供不同的服务。
 
 <br>
 
@@ -177,10 +177,22 @@ private final NamingProxy serverProxy;
 ```java
 // 应用启动，加载 NacosServiceRegistryAutoConfiguration
 public class NacosServiceRegistryAutoConfiguration {
-  // 创建 NacosAutoServiceRegistration，是 AutoServiceRegistration 的实现类
-	@Bean
+    // 创建 NacosAutoServiceRegistration，是 AutoServiceRegistration 的实现类
+    @Bean
 	@ConditionalOnBean(AutoServiceRegistrationProperties.class)
-	public NacosAutoServiceRegistration nacosAutoServiceRegistration
+	public NacosAutoServiceRegistration nacosAutoServiceRegistration(
+		NacosServiceRegistry registry,
+		AutoServiceRegistrationProperties autoServiceRegistrationProperties,
+		NacosRegistration registration) {
+        /**
+         * 应用启动会注入 NacosServiceRegistryAutoConfiguration，就会创建 NacosAutoServiceRegistration
+         * NacosAutoServiceRegistration 是 AbstractAutoServiceRegistration 的实现类，其实现了对 web 容器启动初始化的监听
+         * Tomcat 启动后，就会触发其 onApplicationEvent() 回调方法的执行
+         * 层层调用就会执行 NacosNamingService.registerInstance()，即 Nacos Client 的注册
+         */
+        return new NacosAutoServiceRegistration(registry,
+                autoServiceRegistrationProperties, registration);
+	}
 }
 ```
 
@@ -216,6 +228,7 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 ```
 
 1. **心跳请求**：BeatReactor.addBeatInfo(groupedServiceName, beatInfo)
+
     - 通过使用一个「one-shot action」一次性定时任务，来发送心跳请求，当 BeatTask 在执行完任务后会再创建一个相同的一次性定时任务，用于发送下一次的心跳请求，这样就实现了一次性定时任务的循环执行。
 
     - **发送心跳的定时任务是由一个新的线程执行的**。
@@ -226,20 +239,21 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 2. **注册请求**：NamingProxy.registerService(groupedServiceName, groupName, instance)
 - 如果 Nacos 指定了连接的 server 地址，则尝试连接这个指定的 server 地址，若连接失败，会尝试连接三次（默认值，可配置），若始终失败，会抛出异常；
-  
+    
 - 如果 Nacos 没有指定连接的 server 地址，Nacos 会首次按获取到其配置的所有 server 地址，然后再随机选择一个 server 进行连接，如果连接失败，其会以轮询方式再尝试连接下一台，直到将所有 server 都进行了尝试，如果最终没有任何一台能够连接成功，则会抛出异常；
-  
+    
 - 底层使用 Nacos 自定义的一个 HttpClientRequest「JdkHttpClientRequest」发起请求。JdkHttpClientRequest 实现了对 JDK 中的 HttpURLConnection 的封装。
+
 
 <br>
 
-Nacos Client 向 Nacos Server 发送的注册、订阅、获取状态等连接请求是通过 NamingService 完成，但是心跳请求不是，心跳是通过 BeatReactor 提交的。而 Nacos Client 向 Nacos Server 发送的所有请求都是通过 NamingProxy 完成的提交。
+Nacos Client 向 Nacos Server 发送的注册、订阅、获取状态等连接请求是通过 NamingService 完成，但是心跳请求不是，心跳是通过 BeatReactor 提交的。而 Nacos Client 向 Nacos Server 发送的所有请求最终都是通过 NamingProxy 完成的提交。
 
 Nacos Client 向 Nacos Server 发送的注册、订阅、获取状态等连接请求，是 NamingProxy 分别提交的 **POST**、**PUT**、**GET** 请求。最终是通过其自研的、封装了 JDK 的 HttpURLConnection 的 HttpClientRequest 发出的请求。
 
 <br>
 
-#### Nacos Client 获取所有服务
+#### Nacos Client 获取所有服务名称列表
 
 **NacosNamingService.getServicesOfServer()**
 
@@ -262,7 +276,7 @@ Nacos Discovery 应用在启动时会完成其必须的自动配置，会加载�
 
 <br>
 
-#### Nacos Client 订阅服务
+#### Nacos Client 服务发现（默认开启订阅拉取）
 
 **NacosNamingService.subscribe()**
 
@@ -272,10 +286,53 @@ Nacos Discovery 应用在启动时会完成其必须的自动配置，会加载�
 
 **Nacos Client 启动时会创建一个 NacosWatch 类实例，NacosWatch 实现了 SmartLifecycle 接口，应用启动后，会回调其 start() 方法， 即定时从 Nacos Server 端获取当前服务的所有实例并更新到本地。**
 
+Nacos 的服务发现功能有两种实现方式，一种是客户端主动请求服务端拉取注册的实例，另一种是客户端对服务端进行订阅之后，当服务端注册的实例发生变更之后，服务端会主动推送注册实例给客户端。第一种主动拉取的模式比较简单其实就是客户端发起拉取请求之后然后服务端根据请求的内容去双层 map 结构中找到对应的注册实例返回给客户端，而第二种方式则比较复杂，需要服务端去进行数据的推送。
+
+
+对于订阅拉取，首先会从 serviceInfoMap 中根据服务名称和集群名称去找到对应的 ServiceInfo 对象，这个 ServiceInfo 对象就是保存了对应服务和集群下的所有实例信息，而 serviceInfoMap 就存放了我们客户端每一次从 nacos 服务端去获取不同服务和集群下的所有实例信息，也就是说在客户端这边存储了一份实例信息在内存中。当客户端第一次去请求这个服务和集群下的所有实例的时候，返回的 ServiceInfo 肯定就是 null，也就是内存中是没有的，需要通过 updateServiceNow 方法从 nacos 服务端中去拿，总结来说就是客户端每次都会先从 serviceInfoMap 中去拿，如果拿到的 ServiceInfo 为空就需要去请求服务端获取，那么这就需要 serviceInfoMap 中保存的数据与服务端是一致最新的，所以 nacos 是如何保证到这一点的呢？其实服务端在服务发生改变后都会立刻推送最新的 ServiceInfo 给客户端，客户端拿到最新的 ServiceInfo 之后就更新到 serviceInfoMap 中。还有 getServiceInfo 方法还有个小细节，就是在updateServiceNow 方法执行之前会往 updatingMap 中进行一个占位，表示这个服务和集群的实例正在获取了，然后在 updateServiceNow 方法执行完之后才把这个占位从 updatingMap 中移除，也就是说如果第一个线程正在请求服务端获取服务实例，后面的线程再进来的话可能就会来到 else if 分支，在这个分支中其他线程通过 wait 方法进入阻塞的状态，直到第一个线程获取到实例集合数据并缓存到内存中的时候才会被唤醒，或者超时唤醒，默认的超时时间是 5s。
+
+在 updateServiceNow 方法中，最终会调用 serverProxy 这个 api 组件向 nacos 服务端发起拉取对应服务和集群下所有实例的请求，获取到最新的服务实例数据之后就会交给 processServiceJson 方法进行处理，最后 updateService 方法在 finally 代码块中就是对上面说解除其他线程的阻塞状态。有一个需要注意的点，就是在 serverProxy 组件的 queryList 方法的第三个参数中，需要传入一个 udp 端口，如果是订阅拉取的话，那么这个参数是大于 0 的，如果是主动拉取的，那么这个参数传的就是 0，服务端会根据这个参数去判断你这个客户端是主动拉取还是订阅拉取。
+
+
 Nacos Client 服务订阅与 Eureka Client 的服务订阅都是从 Server 端下载服务列表。但不同点是：
 
 - Eureka Client 的服务订阅是定时从 Server 端获取**发生变更的服务**的所有实例并更新到本地注册表中；
 - Nacos Client 的服务订阅是定时从 Server 端获取**当前服务**的所有实例并更新到本地。
+
+<br>
+
+#### Nacos Client 接收服务端推送的数据
+
+**NacosNamingService.init()**
+
+在 NacosNamingService 客户端初始化方法中，会创建 HostReactor 这个组件，而 HostReactor 组件的构造方法中，也会做一些事情
+
+```java
+// 创建接收 nacos 服务端推送信息的组件。创建一个 PushReceiver 实例，用于 UDP 通信。
+this.pushReceiver = new PushReceiver(this);
+this.notifier = new InstancesChangeNotifier();
+
+// 给 InstanceChangeEvent 事件绑定对应的事件发布者
+NotifyCenter.registerToPublisher(InstancesChangeEvent.class, 16384);
+// 注册一个 InstanceChangeEvent 事件的事件订阅者
+NotifyCenter.registerSubscriber(notifier);
+```
+
+在 HostReactor 组件被创建的时候与接收服务端推送数据有关的代码，首先会创建接收服务端推送数据的组件 PushReceiver，在 PushReceiver 组件的构造方法中会创建一个线程池执行接收服务端推送数据的任务。在接收推送数据的任务中开启一个无限循环(死循环)，不断地调用 udpSocket 的原生 receive 方法去获取从服务端发送过来的数据，然后把接收到的数据交给 HostReactor 组件的 processServiceJson() 方法处理，即将来自于 Nacos 服务端推送过来的变更的服务数据更新到当前 Nacos Client 的本地注册表中，更新完本地注册表后，会发布一个 InstancesChangeEvent 事件，发布完成之后，该事件发布者对应的事件订阅者就能够进行监听回调。
+
+```java
+/**
+ * 通过 InstancesChangeEvent 事件对应的事件发布者去发布一个 InstanceChangeEvent 事件，
+ * 发布完之后，该事件发布者对应的事件订阅者就能够进行监听回调。
+ * 事件的发布者和订阅者就是 HostReactor 组件初始化时候创建的
+ */
+NotifyCenter.publishEvent(new InstancesChangeEvent(serviceInfo.getName(), serviceInfo.getGroupName(),
+        serviceInfo.getClusters(), serviceInfo.getHosts()));
+```
+
+
+
+监听器是在 subscribe() 方法中，把指定监听的服务名称和集群名称和对应的监听器放到 listenerMap 中，然后当事件订阅者遍历这些监听器的时候，就会根据发布的事件对象中的服务名称从 listenerMap 中获取到对应的监听器并执行 onEvent() 方法，通过透传的事件对象，用户能够在 onEvent 这个回调方法中获取到指定服务和集群下最新的实例信息了。
 
 <br>
 
@@ -514,7 +571,7 @@ Nacos Server 中，当一个 Service 创建完毕后，一般会为其执行三�
 
 <br>
 
-#### 处理客户端的订阅请求
+#### 服务端处理客户端的订阅拉取请求
 
 InstanceController.list()
 
@@ -522,6 +579,19 @@ InstanceController.list()
 
 1. 创建了该 Nacos Client 对应的 UDP 通信客户端 PushClient，并将其写入到了一个缓存 clientMap
 2. 从注册表中获取到指定服务的所有"可用的" Instance，并将其封装为 JSON
+
+其实就是王 clientMap 集合中添加 PushClient 对象，而每一个 PushClient 对象里面都封装了拉取的客户端的信息，添加完 PushClient 之后，就执行从内存中查找对应实例集合的逻辑了，这个逻辑就是去双层 map 中比较下命名空间 id 和服务名称找到对应的实例。
+
+clientMap 会在 PushService 这个类的 onApplicationEvent() 方法中被遍历使用，而 PushService 这个类实现了 ApplicationListener 接口，PushService 监听的事件类型是 ServiceChangeEvent，也就是说如果通过 Spring 的广播器广播一个 ServiceChangeEvent 事件，那么此时 PushService 就能够监听到，并且调用 onApplicationEvent() 方法，那什么时候会发起这个事件呢？其实有很多地方能触发发送这个事件，比如服务注册的时候就会发起这个事件。
+
+
+
+PushService 就能够监听到 ServiceChangeEvent 事件后，回调 onApplicationEvent() 方法，完成以下逻辑：
+
+1. 从 ServiceChangeEvent 事件中获取到发生变更的服务，根据服务名称、名称空间 id，从 clientMap 中找到对应的 PushClient，如果没有找到就可能说明没有订阅这个服务的客户端发起过拉取实例
+2. 遍历所有订阅了这个服务的 PushClient，如果发现了这个 PushClient 已经过期了就跳过
+3. 包装需要发送的数据到 AckEntry 对象，而这里需要发送的数据肯定就是这个服务发生变更后最新的数据了，这个是根据 prepareHostData() 方法获取的，prepareHostData() 方法中的 getData(cleint) 方法，就会去调用 *com.alibaba.nacos.naming.controllers.InstanceController.doSrvIpxt方法*，其会重新把客户端注册到 PushService 中，目的就是刷新一下注册的时间。
+4. 在拿到需要推送给客户端的数据之后，会调用 udpPush() 方法把数据推送给客户端。通过 udpSocket 原生 api 发送 udp 数据包给客户端。
 
 <br>
 

@@ -65,7 +65,7 @@ public class PushReceiver implements Runnable, Closeable {
                     return thread;
                 }
             });
-            // 异步执行 PushReceiver 任务，即执行 PushReceiver.run()
+            // 异步执行接收 nacos 服务端推送数据的任务，即执行 PushReceiver.run()
             this.executorService.execute(this);
         } catch (Exception e) {
             NAMING_LOGGER.error("[NA] init udp socket failed", e);
@@ -79,10 +79,10 @@ public class PushReceiver implements Runnable, Closeable {
         while (!closed) {
             try {
 
-                // byte[] is initialized with 0 full filled by default
+                // 创建一个 64k 大小的缓冲区。byte[] is initialized with 0 full filled by default
                 byte[] buffer = new byte[UDP_MSS];
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                // 接收来自 Nacos Server 的 UDP 通信推送的数据，并封装到 packet 数据包中
+                // 接收 nacos 服务端推送过来的数据。接收来自 Nacos Server 的 UDP 通信推送的数据，并封装到 packet 数据包中
                 udpSocket.receive(packet);
 
                 // 数据解码为 JSON 串
@@ -94,7 +94,7 @@ public class PushReceiver implements Runnable, Closeable {
                 String ack;
                 // 根据不同的数据类型，生成对应的 ack
                 if ("dom".equals(pushPacket.type) || "service".equals(pushPacket.type)) {
-                    // 将来自于 Nacos Server 的发送变更的 Service 数据更新到当前 Nacos Client 的本地注册表中
+                    // 将来自于 Nacos 服务端推送过来的变更的服务数据更新到当前 Nacos Client 的本地注册表中
                     hostReactor.processServiceJson(pushPacket.data);
 
                     // send ack to server
@@ -111,7 +111,7 @@ public class PushReceiver implements Runnable, Closeable {
                             + "\", \"data\":" + "\"\"}";
                 }
 
-                // 向 Nacos Server 发送响应（即发送反馈的 UDP 通信）
+                // 向 Nacos Server 发送响应数据，即发送反馈的 UDP 通信
                 udpSocket.send(new DatagramPacket(ack.getBytes(UTF_8), ack.getBytes(UTF_8).length,
                         packet.getSocketAddress()));
             } catch (Exception e) {

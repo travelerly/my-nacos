@@ -56,6 +56,10 @@ public class NacosServiceRegistry implements ServiceRegistry<Registration> {
 		this.nacosDiscoveryProperties = nacosDiscoveryProperties;
 	}
 
+	/**
+	 * nacos client 的注册
+	 * @param registration registration meta data
+	 */
 	@Override
 	public void register(Registration registration) {
 

@@ -61,9 +61,11 @@ public class NacosDiscoveryClient implements DiscoveryClient {
 		}
 	}
 
+	// 获取所有服务名称列表
 	@Override
 	public List<String> getServices() {
 		try {
+			// 获取所有服务名称列表
 			return serviceDiscovery.getServices();
 		}
 		catch (Exception e) {

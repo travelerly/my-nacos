@@ -61,7 +61,9 @@ public class NotifyCenter {
     private static Class<? extends EventPublisher> clazz = null;
     
     /**
-     * Publisher management container.
+     * 事件发布者集合。Publisher management container.
+     * key：事件类型名称，即把 InstancesChangeEvent.class 当做 key
+     * value：该事件对应的时间发布者，即把事件发布器作为 value，具体的事件发布器为 DefaultPublisher
      */
     private final Map<String, EventPublisher> publisherMap = new ConcurrentHashMap<String, EventPublisher>(16);
     
@@ -184,30 +186,37 @@ public class NotifyCenter {
             }
             return;
         }
-        
+
+        // 获取到订阅者想要订阅的事件
         final Class<? extends Event> subscribeType = consumer.subscribeType();
         if (ClassUtils.isAssignableFrom(SlowEvent.class, subscribeType)) {
             INSTANCE.sharePublisher.addSubscriber(consumer, subscribeType);
             return;
         }
-        
+
+        // 给该订阅者找到对应的发布者，并对他们进行绑定。
         addSubscriber(consumer, subscribeType);
     }
     
     /**
+     * 根据订阅者所订阅的事件去找到发布该事件的发布者，并且给这个订阅者注册到找到的事件发布者中
      * Add a subscriber to publisher.
      *
-     * @param consumer      subscriber instance.
-     * @param subscribeType subscribeType.
+     * @param consumer      事件订阅者。subscriber instance.
+     * @param subscribeType 事件订阅者订阅的事件类型。subscribeType.
      */
     private static void addSubscriber(final Subscriber consumer, Class<? extends Event> subscribeType) {
-        
+
+        // 获取到事件名称
         final String topic = ClassUtils.getCanonicalName(subscribeType);
         synchronized (NotifyCenter.class) {
             // MapUtils.computeIfAbsent is a unsafe method.
+            // 该方法通过 publisherFactory 创建出来一个事件发布者，并把指定的事件类型与该事件发布者进行绑定，然后将该发布者放入到 publisherMap 中。
             MapUtils.computeIfAbsent(INSTANCE.publisherMap, topic, publisherFactory, subscribeType, ringBufferSize);
         }
+        // 从 publisherMap 中获取到该事件发布者
         EventPublisher publisher = INSTANCE.publisherMap.get(topic);
+        // 将订阅者注册到该事件发布者中
         publisher.addSubscriber(consumer);
     }
     
@@ -285,7 +294,8 @@ public class NotifyCenter {
         }
         
         final String topic = ClassUtils.getCanonicalName(eventType);
-        
+
+        // 根据 InstancesChangeEvent 事件类型从 publisherMap 中获取到对应的发布器，也就是 DefaultPublisher，然后调用 publish 方法。
         EventPublisher publisher = INSTANCE.publisherMap.get(topic);
         if (publisher != null) {
             return publisher.publish(event);
@@ -305,21 +315,24 @@ public class NotifyCenter {
     }
     
     /**
-     * Register publisher.
+     * 注册事件到事件发布者中。Register publisher.
      *
-     * @param eventType    class Instances type of the event type.
-     * @param queueMaxSize the publisher's queue max size.
+     * @param eventType    注册的事件类型。class Instances type of the event type.
+     * @param queueMaxSize 事件发布者的事件队列大小。the publisher's queue max size.
      */
     public static EventPublisher registerToPublisher(final Class<? extends Event> eventType, final int queueMaxSize) {
         if (ClassUtils.isAssignableFrom(SlowEvent.class, eventType)) {
             return INSTANCE.sharePublisher;
         }
-        
+
+        // 获取事件名称
         final String topic = ClassUtils.getCanonicalName(eventType);
         synchronized (NotifyCenter.class) {
             // MapUtils.computeIfAbsent is a unsafe method.
+            // 把这个事件与 publisherFactory 创建出来的事件发布者进行绑定并放到 publisherMap 中。
             MapUtils.computeIfAbsent(INSTANCE.publisherMap, topic, publisherFactory, eventType, queueMaxSize);
         }
+        // 返回事件发布者
         return INSTANCE.publisherMap.get(topic);
     }
     

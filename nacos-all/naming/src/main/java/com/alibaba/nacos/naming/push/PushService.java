@@ -73,6 +73,13 @@ public class PushService implements ApplicationContextAware, ApplicationListener
 
     private static volatile ConcurrentMap<String, Receiver.AckEntry> ackMap = new ConcurrentHashMap<>();
 
+    /**
+     * 保存了所有已订阅服务变更的可推送目标客户端
+     * key：namespaceId##groupId@@微服务名，以具体的某个服务作为维度进行区分
+     * clientMap 是一个双层 map，外层 map 的 key："namespaceId##groupId@@微服务名称"；value：为内层 map
+     * 内层 map 的 key：代表 Instance 的字符串；value：该 Instance 对应的 UDP Client，即 PushClient，可推送目标客户端对象，
+     * 整个 map 结构就表示了每一个服务都会对应多个已订阅的可推送目标客户端。
+     */
     private static ConcurrentMap<String, ConcurrentMap<String, PushClient>> clientMap = new ConcurrentHashMap<>();
 
     private static volatile ConcurrentMap<String, Long> udpSendTimeMap = new ConcurrentHashMap<>();
@@ -116,28 +123,38 @@ public class PushService implements ApplicationContextAware, ApplicationListener
         this.applicationContext = applicationContext;
     }
 
-    // Server-Client 间的 UDP 通信：Nacos Server 向 Nacos Client 发送 UDP 推送请求
+    /**
+     * PushService 订阅了 ServiceChangeEvent 事件，当服务变更时，回调此方法进行服务变更的推送
+     * Server-Client 间的 UDP 通信：Nacos Server 向 Nacos Client 发送 UDP 推送请求
+     * @param event
+     */
     @Override
     public void onApplicationEvent(ServiceChangeEvent event) {
+        // 获取服务变更事件中的服务对象、服务名称、名称空间 id
         Service service = event.getService();
         String serviceName = service.getName();
         String namespaceId = service.getNamespaceId();
-        // 启动一个定时操作，异步执行相关操作（例如）
+
+        // 启动一个定时操作，异步执行服务变更推送操作
         Future future = GlobalExecutor.scheduleUdpSender(() -> {
             try {
                 Loggers.PUSH.info(serviceName + " is changed, add it to push queue.");
-                // 从缓存 map 中获取当前服务的内存 map
-                // 内层 map 中存放的是当前服务的所有 Nacos Client 的 UDP 客户端 PushClient
+                /**
+                 * 获取订阅了这个服务的所有客户端
+                 * 从缓存 map 中获取当前服务的内存 map
+                 * 内层 map 中存放的是当前服务的所有 Nacos Client 的 UDP 客户端 PushClient
+                 */
                 ConcurrentMap<String, PushClient> clients = clientMap
                         .get(UtilsAndCommons.assembleFullServiceName(namespaceId, serviceName));
                 if (MapUtils.isEmpty(clients)) {
+                    // 跳过没有订阅这个服务的客户端
                     return;
                 }
 
                 Map<String, Object> cache = new HashMap<>(16);
                 // 更新最后引用时间戳
                 long lastRefTime = System.nanoTime();
-                // 遍历所有 PushClient，向该服务的所有订阅者 Nacos Client 进行 UDP 推送
+                // 遍历指定服务和集群下所有可推送的目标客户端，向订阅者(Nacos Client)进行 UDP 推送
                 for (PushClient client : clients.values()) {
                     if (client.zombie()) {
                         Loggers.PUSH.debug("client is zombie: " + client.toString());
@@ -149,10 +166,12 @@ public class PushService implements ApplicationContextAware, ApplicationListener
 
                     Receiver.AckEntry ackEntry;
                     Loggers.PUSH.debug("push serviceName: {} to client: {}", serviceName, client.toString());
+                    // key：serviceName@@@@agent
                     String key = getPushCacheKey(serviceName, client.getIp(), client.getAgent());
                     byte[] compressData = null;
                     Map<String, Object> data = null;
                     if (switchDomain.getDefaultPushCacheMillis() >= 20000 && cache.containsKey(key)) {
+                        // 满足判断条件，就使用前面准备的数据，该当前客户端进行推送
                         org.javatuples.Pair pair = (org.javatuples.Pair) cache.get(key);
                         compressData = (byte[]) (pair.getValue0());
                         data = (Map<String, Object>) pair.getValue1();
@@ -160,11 +179,16 @@ public class PushService implements ApplicationContextAware, ApplicationListener
                         Loggers.PUSH.debug("[PUSH-CACHE] cache hit: {}:{}", serviceName, client.getAddrStr());
                     }
 
-                    if (compressData != null) {
+                    if (compressData != null) { // 使用旧的推送数据去推送
                         ackEntry = prepareAckEntry(client, compressData, data, lastRefTime);
                     } else {
+                        /**
+                         * 创建一个 AckEntry 对象，其包装了推送给客户端的数据
+                         * 通过 prepareHostsData() 方法能够获取到可推送客户端订阅的服务的最新实例信息，并且将这个可推送客户端重新注册到 PushService 中。
+                         */
                         ackEntry = prepareAckEntry(client, prepareHostsData(client), lastRefTime);
                         if (ackEntry != null) {
+                            // 把 key 与推送的数据进行绑定放到缓存中
                             cache.put(key, new org.javatuples.Pair<>(ackEntry.origin.getData(), ackEntry.data));
                         }
                     }
@@ -172,18 +196,20 @@ public class PushService implements ApplicationContextAware, ApplicationListener
                     Loggers.PUSH.info("serviceName: {} changed, schedule push for: {}, agent: {}, key: {}",
                             client.getServiceName(), client.getAddrStr(), client.getAgent(),
                             (ackEntry == null ? null : ackEntry.key));
-                    // UDP 通信，向 Nacos Client 发送请求
+                    // UDP 通信，向客户端 Nacos Client 推送数据
                     udpPush(ackEntry);
                 }
             } catch (Exception e) {
                 Loggers.PUSH.error("[NACOS-PUSH] failed to push serviceName: {} to client, error: {}", serviceName, e);
 
             } finally {
+                // 推送完成之后从 futureMap 中移除这个服务的 key
                 futureMap.remove(UtilsAndCommons.assembleFullServiceName(namespaceId, serviceName));
             }
 
         }, 1000, TimeUnit.MILLISECONDS);
 
+        // 把这个服务的 key 放到 futureMap 中，标识当前服务正在进行推送数据给客户端
         futureMap.put(UtilsAndCommons.assembleFullServiceName(namespaceId, serviceName), future);
 
     }
@@ -197,6 +223,7 @@ public class PushService implements ApplicationContextAware, ApplicationListener
     }
 
     /**
+     * 添加一个目标推送客户端
      * Add push target client.
      *
      * @param namespaceId namespace id
@@ -213,21 +240,27 @@ public class PushService implements ApplicationContextAware, ApplicationListener
         // 创建一个 UDP Client
         PushClient client = new PushClient(namespaceId, serviceName, clusters, agent, socketAddr, dataSource, tenant,
                 app);
-        // 将这个 UDP Client 添加到缓存 ConcurrentMap<String, PushClient> clients 中
+        // 添加一个目标推送客户端。将这个 UDP Client 添加到缓存 ConcurrentMap<String, PushClient> clients 中
         addClient(client);
     }
 
     /**
+     * 添加一个目标推送客户端
      * Add push target client.
      *
-     * @param client push target client
+     * @param client 推送目标客户端。push target client
      */
     public void addClient(PushClient client) {
         // client is stored by key 'serviceName' because notify event is driven by serviceName change
+        // key == namespaceId##groupId@@微服务名称
         String serviceKey = UtilsAndCommons.assembleFullServiceName(client.getNamespaceId(), client.getServiceName());
-        // clientMap 缓存当前 Nacos Server 中所有实例 Instance 对应的 UDP Client。
-        // clientMap 是一个双层 map，外层 map 的 key："namespaceId##groupId@@微服务名"；value：为内层 map
-        // 内层 map 的 key：代表 Instance 的字符串；value：该 Instance 对应的 UDP Client，即 PushClient。
+        /**
+         * 根据 key 从 clientMap 中获取到客户端集合
+         * clientMap 缓存当前 Nacos Server 中所有实例 Instance 对应的 UDP Client，即保存了所有已订阅服务变更的可推送目标客户端
+         * clientMap 是一个双层 map，外层 map 的 key："namespaceId##groupId@@微服务名称"；value：为内层 map
+         * 内层 map 的 key：代表 Instance 的字符串；value：该 Instance 对应的 UDP Client，即 PushClient，可推送目标客户端对象，
+         * 整个 map 结构就表示了每一个服务都会对应多个已订阅的可推送目标客户端。
+         */
         ConcurrentMap<String, PushClient> clients = clientMap.get(serviceKey);
         if (clients == null) {
             // 当前服务的内层 map 为 null，则创建一个并放入到缓存 clientMap 中
@@ -237,12 +270,12 @@ public class PushService implements ApplicationContextAware, ApplicationListener
 
         // 从缓存内层 map 中，获取为当前服务所创建的 PushClient
         PushClient oldClient = clients.get(client.toString());
-        // 判断为当前服务所创建的 PushClient 在缓存 clientMap 中是否存在 。
+        // 判断为当前服务所创建的 PushClient 在缓存 clientMap 中是否存在，即判断是否已经注册了对应的推送目标客户端。
         if (oldClient != null) {
             // 若 PushClient 存在，则更新最后引用时间戳
             oldClient.refresh();
         } else {
-            // 若 PushClient 不存在，则将其存入到缓存 clientMap 中
+            // 若 PushClient 不存在，则将其存入到缓存 clientMap 中，即没有注册这个推送目标客户端，需要进行注册。
             PushClient res = clients.putIfAbsent(client.toString(), client);
             if (res != null) {
                 Loggers.PUSH.warn("client: {} already associated with key {}", res.getAddrStr(), res.toString());
@@ -382,8 +415,10 @@ public class PushService implements ApplicationContextAware, ApplicationListener
 
     /**
      * Service changed.
+     * 指定服务下的实例信息有变化的时候会调用此方法，在方法中会去通过 Spring 时间机制发布一个 ServiceChangeEvent 事件
+     * 其中 PushService 组件就订阅了 ServiceChangeEvent 事件，会去执行订阅逻辑，在订阅逻辑中会去推送该服务下最新的实例信息给客户端。
      *
-     * @param service service
+     * @param service 指定的服务
      */
     public void serviceChanged(Service service) {
         // merge some change events to reduce the push frequency:
@@ -392,6 +427,7 @@ public class PushService implements ApplicationContextAware, ApplicationListener
             return;
         }
 
+        // 发布 ServiceChangeEvent 事件，
         this.applicationContext.publishEvent(new ServiceChangeEvent(this, service));
     }
 
@@ -600,11 +636,21 @@ public class PushService implements ApplicationContextAware, ApplicationListener
     private static Map<String, Object> prepareHostsData(PushClient client) throws Exception {
         Map<String, Object> cmd = new HashMap<String, Object>(2);
         cmd.put("type", "dom");
+        /**
+         * 在 getData(client) 方法中，就会去调用 com.alibaba.nacos.naming.controllers.InstanceController.doSrvIpxt方法
+         * 这个方法中会去重新把客户端注册到 PushService 中，目的就是刷新一下注册的时间。
+         * dataSource 这个对象是在 PushClient 被创建的时候就穿进去了，所以会看到 PushClient 被创建的地方就能发现这个 DataSource 了。
+         */
         cmd.put("data", client.getDataSource().getData(client));
 
         return cmd;
     }
 
+    /**
+     * 向客户端推送 udp 数据
+     * @param ackEntry
+     * @return
+     */
     private static Receiver.AckEntry udpPush(Receiver.AckEntry ackEntry) {
         if (ackEntry == null) {
             Loggers.PUSH.error("[NACOS-PUSH] ackEntry is null.");
@@ -629,7 +675,7 @@ public class PushService implements ApplicationContextAware, ApplicationListener
             udpSendTimeMap.put(ackEntry.key, System.currentTimeMillis());
 
             Loggers.PUSH.info("send udp packet: " + ackEntry.key);
-            // 发送 UDP 请求
+            // 向客户端发送 UDP 请求。通过 udpSocket 原生 api 发送 udp 数据包给客户端。
             udpSocket.send(ackEntry.origin);
 
             ackEntry.increaseRetryTime();

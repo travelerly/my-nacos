@@ -94,6 +94,7 @@ public class NacosNamingService implements NamingService {
         initCacheDir();
         initLogName(properties);
 
+        // 创建 nacos 的 api 请求客户端。
         this.serverProxy = new NamingProxy(this.namespace, this.endpoint, this.serverList, properties);
         this.beatReactor = new BeatReactor(this.serverProxy, initClientBeatThreadCount(properties));
         this.hostReactor = new HostReactor(this.serverProxy, beatReactor, this.cacheDir, isLoadCacheAtStart(properties),
@@ -205,8 +206,8 @@ public class NacosNamingService implements NamingService {
         registerInstance(serviceName, Constants.DEFAULT_GROUP, instance);
     }
 
-    @Override
     // Nacos Client 的注册(包括注册与心跳)
+    @Override
     public void registerInstance(String serviceName, String groupName, Instance instance) throws NacosException {
         NamingUtils.checkInstanceIsLegal(instance);
         // 生成格式：my_group@@colin-nacos-consumer
@@ -300,15 +301,24 @@ public class NacosNamingService implements NamingService {
         return getAllInstances(serviceName, Constants.DEFAULT_GROUP, clusters, subscribe);
     }
 
+    /**
+     * 获取指定服务下面的指定集群的所有实例
+     * @param serviceName 服务名称。name of service
+     * @param groupName   服务组名称。group of service
+     * @param clusters    集群名称集合。list of cluster
+     * @param subscribe   该客户端是否对指定的服务进行订阅。if subscribe the service
+     * @return
+     * @throws NacosException
+     */
     @Override
     public List<Instance> getAllInstances(String serviceName, String groupName, List<String> clusters,
             boolean subscribe) throws NacosException {
 
         ServiceInfo serviceInfo;
-        if (subscribe) {
+        if (subscribe) { // 该客户端订阅指定的服务
             serviceInfo = hostReactor.getServiceInfo(NamingUtils.getGroupedName(serviceName, groupName),
                     StringUtils.join(clusters, ","));
-        } else {
+        } else { // 该客户端不订阅服务，每次都会请求服务器获取最新的服务实例
             serviceInfo = hostReactor
                     .getServiceInfoDirectlyFromServer(NamingUtils.getGroupedName(serviceName, groupName),
                             StringUtils.join(clusters, ","));
@@ -466,10 +476,20 @@ public class NacosNamingService implements NamingService {
         subscribe(serviceName, Constants.DEFAULT_GROUP, clusters, listener);
     }
 
-    // Nacos Client 向 Nacos Server 提交服务订阅请求（定时从 Nacos Server 端获取当前服务的所有实例并更新到本地）
+    /**
+     * Nacos Client 向 Nacos Server 提交服务订阅请求
+     * 定时从 Nacos Server 端获取当前服务的所有实例并更新到本地
+     *
+     * @param serviceName name of service
+     * @param groupName   group of service
+     * @param clusters    list of cluster
+     * @param listener    event listener
+     * @throws NacosException
+     */
     @Override
     public void subscribe(String serviceName, String groupName, List<String> clusters, EventListener listener)
             throws NacosException {
+        // 通过客户端对象去订阅一个服务，当这个服务发生变更时，就会回调 EventListener 监听器的 onEvent() 方法。
         hostReactor.subscribe(NamingUtils.getGroupedName(serviceName, groupName), StringUtils.join(clusters, ","),
                 listener);
     }
@@ -512,7 +532,7 @@ public class NacosNamingService implements NamingService {
         return getServicesOfServer(pageNo, pageSize, Constants.DEFAULT_GROUP, selector);
     }
 
-    // 客户端获取所有服务的请求
+    // 客户端获取所有服务列表
     @Override
     public ListView<String> getServicesOfServer(int pageNo, int pageSize, String groupName, AbstractSelector selector)
             throws NacosException {
