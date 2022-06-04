@@ -73,11 +73,25 @@ public class ClientBeatCheckTask implements Runnable {
         return KeyBuilder.buildServiceMetaKey(service.getNamespaceId(), service.getName());
     }
 
-    // 清除过期的临时 Instance 实例数据
+
+    /**
+     * 服务端对实例进行过期下线检查，清除过期的临时 Instance 实例数据
+     * 先判断当前服务是否由当前节点负责
+     * 然后再判断 nacos 服务是否开启了健康检查，默认时开启的，如果没有开启，则直接返回，
+     * 接着就获取这个服务中所有的实例对象，遍历这些实例对象，对每一个实例对象中的最近一次心跳续约事件与当前时间进行比较，默认相差超过 15s，
+     * 就把这个实例的健康状态变更为非健康状态，这里仅仅修改健康状态为"非健康"，并没有把实例进行下线，
+     * 然后接着会再一次遍历读物的所有实例，在这一次遍历中，如果当前时间与该实例最近心跳续约的时间差大于 30s，就对该实例进行真正的下线操作，
+     * 所谓下线操作，就是将这个实例从注册表中删除。
+     */
     @Override
     public void run() {
         try {
 
+            /**
+             * 这个判断是与 nacos 集群有关的，因为在 nacos 的 AP 架构中，集群中的每一个 naocs 节点都会具体负责分配给自己的服务，
+             * 比如服务 A 是分配给节点 A，那么节点 A 在这里需要对服务 A 的实例是否过期下线进行判断，其它节点就无需判断了，
+             * 最终由节点 A 同步这个服务 A 的最新信息给到其它节点即可。
+             */
             if (!getDistroMapper().responsible(service.getName())) {
                 /**
                  * 若当前 Service 不需要当前 Server 负责，则直接结束
@@ -159,9 +173,11 @@ public class ClientBeatCheckTask implements Runnable {
             String url = "http://" + IPUtil.localHostIP() + IPUtil.IP_PORT_SPLITER + EnvUtil.getPort() + EnvUtil.getContextPath()
                     + UtilsAndCommons.NACOS_NAMING_CONTEXT + "/instance?" + request.toUrl();
 
-            // delete instance asynchronously:
-            // 调用 Nacos 自研的 HttpClient 完成 Server 间的请求提交，该 HttpClient 是对 Apache 的 http 异步 Client 的封装。
-            // 该请求最终会由 Nacos Server 的 InstanceController.deregister() 来处理，即与处理客户端提交的注销请求的处理方式相同
+            /**
+             * delete instance asynchronously:
+             * 调用 Nacos 自研的 HttpClient 完成 Server 间的请求提交，该 HttpClient 是对 Apache 的 http 异步 Client 的封装。
+             * 该请求最终会由 Nacos Server 的 InstanceController.deregister() 来处理，即与处理客户端提交的注销请求的处理方式相同
+             */
             HttpClient.asyncHttpDelete(url, null, null, new Callback<String>() {
                 @Override
                 public void onReceive(RestResult<String> result) {

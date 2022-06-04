@@ -43,6 +43,8 @@ consistency 模块缺失 entity 包中的代码，需要下载插件 protoc 手�
 
 <img src="doc/nacos数据模型.jpg" alt="nacos数据模型" style="zoom:50%;" />
 
+<img src="doc/nacos数据模型1.jpg" alt="nacos数据模型" style="zoom:50%;" />
+
 一个 **namespace** 下可以包含有很多的 **group**，一个 **group** 下可以包含有很多的 **service**。但 **service** 并不是一个简单的微服务提供者，而是一类提供者的集合。**service** 除了包含微服务名称外，还可以包含很多的 **Cluster**，每个 **Cluster** 中可以包含很多的 **Instance** 提供者，**Instance** 才是真正的微服务提供者主机。
 
 ```yaml
@@ -668,7 +670,7 @@ Nacos Server 中的 ServiceManager 管理着当前 Server 中的所有服务数�
 
 <br>
 
-#### Nacos Config 数据模型
+#### Nacos 数据模型
 
 ![nacos数据模型](doc/nacos数据模型.jpg)
 
