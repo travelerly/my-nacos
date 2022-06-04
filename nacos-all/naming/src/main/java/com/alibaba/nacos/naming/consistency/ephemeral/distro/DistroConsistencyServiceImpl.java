@@ -96,7 +96,11 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
         this.globalConfig = globalConfig;
         this.distroProtocol = distroProtocol;
     }
-    
+
+    /**
+     * 当前 bean 在初始化之后，会开启一个线程池执行 notifier 这个任务。
+     * @PostConstruct 注解的作用是在 DistroConsistencyServiceImpl 被 Spring 容器加载的生命周期过程中调用该方法
+     */
     @PostConstruct
     public void init() {
         GlobalExecutor.submitDistroNotifyTask(notifier);
@@ -105,6 +109,7 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     @Override
     public void put(String key, Record value) throws NacosException {
         onPut(key, value);
+        // 同步数据到 nacos 集群中的其它节点
         distroProtocol.sync(new DistroKey(key, KeyBuilder.INSTANCE_LIST_KEY_PREFIX), DataOperation.CHANGE,
                 globalConfig.getTaskDispatchPeriod() / 2);
     }
@@ -127,7 +132,7 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
      * @param value record
      */
     public void onPut(String key, Record value) {
-        
+        // 操作的 record 是临时的，不会被持久化
         if (KeyBuilder.matchEphemeralInstanceListKey(key)) {
             Datum<Instances> datum = new Datum<>();
             datum.value = (Instances) value;
@@ -137,9 +142,15 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
         }
         
         if (!listeners.containsKey(key)) {
+            // 跳过 listeners 中没有这个 key 的监听器
             return;
         }
-        
+
+        /**
+         * 向通知线程的阻塞队列中新增一个 pair，通知线程会不断地从阻塞队列中拿到 pair 对象，
+         * 根据 pair 对象的 key 从 dataStore 中获取到 datum，再从 datum 对象中获取到 record，
+         * 然后根据 key 找到对应的监听器队列，根据动作类型去回调这些监听器队列所对应的方法，并把上面获取到的 record 作为参数传给监听回调方法。
+         */
         notifier.addTask(key, DataOperation.CHANGE);
     }
     
@@ -318,17 +329,32 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
             return false;
         }
     }
-    
+
+    /**
+     * 给指定的 key 注册一个监听器
+     * @param key      名称空间 id + 服务名称，例如：com.alibaba.nacos.naming.iplist.ephemeral.namespaceId##serviceName
+     * @param listener 监听器实例callback of data change
+     * @throws NacosException
+     */
     @Override
     public void listen(String key, RecordListener listener) throws NacosException {
         if (!listeners.containsKey(key)) {
+            /**
+             * 监听器集合中没有 key 为 com.alibaba.nacos.naming.iplist.ephemeral.namespaceId##serviceName 的监听器队列，
+             * 则给该 key 初始化一个空的监听器队列
+             */
             listeners.put(key, new ConcurrentLinkedQueue<>());
         }
         
         if (listeners.get(key).contains(listener)) {
+            /**
+             * 监听器集合中已经存在 key 为 com.alibaba.nacos.naming.iplist.ephemeral.namespaceId##serviceName 的监听器队列，
+             * 并且该队列中包含 key 对应的监听器，则不再重复添加监听器，直接跳过
+             */
             return;
         }
-        
+
+        // 给这个 key 对应的监听器队列添加一个监听器
         listeners.get(key).add(listener);
     }
     
@@ -353,21 +379,34 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     public boolean isInitialized() {
         return distroProtocol.isInitialized() || !globalConfig.isDataWarmup();
     }
-    
+
+    /**
+     * 该任务会在 nacos 服务启动的时候被线程池所执行
+     * 执行的时候会开启一个死循环，不断地从阻塞队列中获取 pair 对象并处理，pair 对象封装了 key 的动作类型，
+     * 根据 key 可以获取对应的监听队列，根据动作类型可以选择回调监听器的哪个回调方法，
+     * 其中当执行实例注册的时候，最终会由监听器监听到并执行具体的注册操作，通过这种方法可以使得整个实例注册流程异步化，提升并发性能。
+     */
     public class Notifier implements Runnable {
-        
+
+        /**
+         * key：
+         *    临时实例：com.alibaba.nacos.naming.iplist.ephemeral.namespaceId##serviceName
+         *    持久实例：com.alibaba.nacos.naming.iplist.namespaceId##serviceName
+         * value：StringUtils.EMPTY
+         */
         private ConcurrentHashMap<String, String> services = new ConcurrentHashMap<>(10 * 1024);
         
         private BlockingQueue<Pair<String, DataOperation>> tasks = new ArrayBlockingQueue<>(1024 * 1024);
         
         /**
-         * Add new notify task to queue.
+         * 向队列中添加一个通知任务。Add new notify task to queue.
          *
          * @param datumKey data key
          * @param action   action for data
          */
         public void addTask(String datumKey, DataOperation action) {
-            
+
+            // 表示该服务的变更操作正在进行中
             if (services.containsKey(datumKey) && action == DataOperation.CHANGE) {
                 return;
             }
@@ -384,9 +423,17 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
         @Override
         public void run() {
             Loggers.DISTRO.info("distro notifier started");
-            
+
+            /**
+             * 开启一个无限循环，不断地从阻塞队列中获取 pair 对象并处理
+             * pair 对象其实就是一个键值对，key 为名称空间 id + 服务名，value 是操作类型，
+             * 然后将 pair 对象交给 handle() 方法处理，
+             * handle() 方法会根据 pair 对象中的 key 从 listener 集合中找到对应的监听器集合，
+             * 再根据 value 对应的操作类型，调用对应的回调方法。
+             */
             for (; ; ) {
                 try {
+                    // 处理从 tasks 总获取到的 pair 对象
                     Pair<String, DataOperation> pair = tasks.take();
                     handle(pair);
                 } catch (Throwable e) {
@@ -397,28 +444,38 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
         
         private void handle(Pair<String, DataOperation> pair) {
             try {
+                /**
+                 * 临时实例：datumKey == com.alibaba.nacos.naming.iplist.ephemeral.namespaceId##serviceName
+                 * 持久实例：datumKey == com.alibaba.nacos.naming.iplist.namespaceId##serviceName
+                 */
                 String datumKey = pair.getValue0();
+                // 操作类型
                 DataOperation action = pair.getValue1();
                 
                 services.remove(datumKey);
                 
                 int count = 0;
-                
+
+                // listeners 中没有这个 key 的监听器
                 if (!listeners.containsKey(datumKey)) {
+                    // 直接跳过(返回)
                     return;
                 }
-                
+
+                // 回调该 key 所对应的所有监听器
                 for (RecordListener listener : listeners.get(datumKey)) {
                     
                     count++;
                     
                     try {
-                        if (action == DataOperation.CHANGE) {
+                        if (action == DataOperation.CHANGE) { // 操作类型是"CHANGE"
+                            // 操作类型是"CHANGE"，回调监听器的 onChange() 方法
                             listener.onChange(datumKey, dataStore.get(datumKey).value);
                             continue;
                         }
                         
                         if (action == DataOperation.DELETE) {
+                            // 操作类型是"DELETE"，回调监听器的 onDelete() 方法
                             listener.onDelete(datumKey);
                             continue;
                         }

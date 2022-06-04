@@ -116,26 +116,26 @@ public class InstanceController {
     };
 
     /**
-     * 处理客户端注册请求。Register new instance.
+     * 处理客户端注册请求，注册新实例。Register new instance.
      *
      * @param request http request
-     * @return 'ok' if success
+     * @return 'ok' if success，注册成功返回 ok
      * @throws Exception any error during register
      */
     @CanDistro
     @PostMapping
     @Secured(parser = NamingResourceParser.class, action = ActionTypes.WRITE)
     public String register(HttpServletRequest request) throws Exception {
-        // 从请求中获取指定属性的值：namespaceId
+        // 从请求域中获取指定属性的值：namespaceId，名称空间，如果获取不到，则返回值为 public
         final String namespaceId = WebUtils
                 .optional(request, CommonParams.NAMESPACE_ID, Constants.DEFAULT_NAMESPACE_ID);
-        // 从请求中获取指定属性的值：serviceName
+        // 从请求域中获取指定属性的值：serviceName，服务名称，如果获取不到会抛异常
         final String serviceName = WebUtils.required(request, CommonParams.SERVICE_NAME);
         // 检查 serviceName 是否合法。「必须以"@@"连接两个字符串」
         NamingUtils.checkServiceNameFormat(serviceName);
-        // 将请求参数解析成 Instance 数据
+        // 将请求参数解析成 Instance 数据，根据解析请求域参数得到对应参数值填充到服务实例对象中
         final Instance instance = parseInstance(request);
-        // 将 Instance 数据注册到注册表中
+        // 注册服务实例，即将 Instance 数据注册到注册表中
         serviceManager.registerInstance(namespaceId, serviceName, instance);
         return "ok";
     }
@@ -459,10 +459,10 @@ public class InstanceController {
     }
 
     /**
-     * 处理客户端心跳请求。Create a beat for instance.
+     * 处理客户端心跳请求，给某个实例发送心跳。Create a beat for instance.
      *
      * @param request http request
-     * @return detail information of instance
+     * @return 实例详细信息。detail information of instance
      * @throws Exception any error during handle
      */
     @CanDistro
@@ -485,23 +485,26 @@ public class InstanceController {
         // 获取客户端传递过来的端口「port」，其将用于"UDP"通信
         int port = Integer.parseInt(WebUtils.optional(request, "port", "0"));
         if (clientBeat != null) {
+            // 如果心跳内容中指定了集群名称「clusterName」，则使用该名称，否则使用默认集群名称
             if (StringUtils.isNotBlank(clientBeat.getCluster())) {
                 clusterName = clientBeat.getCluster();
             } else {
                 // fix #2533
                 clientBeat.setCluster(clusterName);
             }
+            // 如果心跳内容中指定了实例的 ip 和端口，那么就以该指定数据为准
             ip = clientBeat.getIp();
             port = clientBeat.getPort();
         }
         String namespaceId = WebUtils.optional(request, CommonParams.NAMESPACE_ID, Constants.DEFAULT_NAMESPACE_ID);
         String serviceName = WebUtils.required(request, CommonParams.SERVICE_NAME);
+        // 校验服务名称是否合法
         NamingUtils.checkServiceNameFormat(serviceName);
         Loggers.SRV_LOG.debug("[CLIENT-BEAT] full arguments: beat: {}, serviceName: {}", clientBeat, serviceName);
         // 从本地注册表中获取当前发送心跳请求的客户端对应的实例数据
         Instance instance = serviceManager.getInstance(namespaceId, serviceName, clusterName, ip, port);
 
-        if (instance == null) {
+        if (instance == null) { // 说明对应的实例还没有注册
             if (clientBeat == null) {
                 result.put(CommonParams.CODE, NamingResponseCode.RESOURCE_NOT_FOUND);
                 return result;

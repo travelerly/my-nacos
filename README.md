@@ -20,14 +20,14 @@ consistency 模块缺失 entity 包中的代码，需要下载插件 protoc 手�
 
 ### 几种常见注册中心的对比
 
-| 对比项           | Zookeeper | Eureka | consul | Nacos |
-| ---------------- | --------- | ------ | ------ | ----- |
-| CAP              | CP        | AP     | CP     | CP/AP |
-| 一致性算法       | Paxos     | -      | Raft   | Raft  |
-| 自我保护机制     | 无        | 有     | 无     | 有    |
-| SpringCloud 集成 | 支持      | 支持   | 支持   | 支持  |
-| Dubbo 集成       | 支持      | 不支持 | 支持   | 支持  |
-| K8s 集成         | 不支持    | 不支持 | 支持   | 支持  |
+| 对比项           | Zookeeper      | Eureka           | consul         | Nacos            |
+| ---------------- | -------------- | ---------------- | -------------- | ---------------- |
+| CAP              | CP（强一致性） | AP（最终一致性） | CP（强一致性） | CP/AP（默认 AP） |
+| 一致性算法       | Paxos          | -                | Raft           | Raft             |
+| 自我保护机制     | 无             | 有               | 无             | 有               |
+| SpringCloud 集成 | 支持           | 支持             | 支持           | 支持             |
+| Dubbo 集成       | 支持           | 不支持           | 支持           | 支持             |
+| K8s 集成         | 不支持         | 不支持           | 支持           | 支持             |
 
 
 
@@ -198,6 +198,12 @@ public class NacosServiceRegistryAutoConfiguration {
 
 <br>
 
+**自动注册原理：**
+
+其实就是利用了 Spring 事件机制完成的。Naocs 利用 Spring 的时间机制去实现，就是用 SpringCloud 中对于注册中心的一个标准，该标准就是 springcloud-commons 这个包规定的。其中 **AbstractAutoServiceRegistration**，这个类主要是完成自动注册的一个抽象流程，具体的注册逻辑就需要具体的注册中心自己实现，这个类是一个抽象类，同时也实现了 ApplicationListener 接口，并且接口泛型为 WebServerInitializedEvent，作用就是这个类具有了监听器的功能，监听的事件为 WebServerInitializedEvent，当监听到这个事件的时候，就调用 **onApplicationEvent** 方法，最终会调到 start() 方法，然后继续调用到 register 方法，实现注册。
+
+
+
 **NacosAutoServiceRegistration 是如何完成自动注册的**？
 
 1. **NacosAutoServiceRegistration** 实现了 AbstractAutoServiceRegistration
@@ -239,9 +245,9 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 2. **注册请求**：NamingProxy.registerService(groupedServiceName, groupName, instance)
 - 如果 Nacos 指定了连接的 server 地址，则尝试连接这个指定的 server 地址，若连接失败，会尝试连接三次（默认值，可配置），若始终失败，会抛出异常；
-    
+  
 - 如果 Nacos 没有指定连接的 server 地址，Nacos 会首次按获取到其配置的所有 server 地址，然后再随机选择一个 server 进行连接，如果连接失败，其会以轮询方式再尝试连接下一台，直到将所有 server 都进行了尝试，如果最终没有任何一台能够连接成功，则会抛出异常；
-    
+  
 - 底层使用 Nacos 自定义的一个 HttpClientRequest「JdkHttpClientRequest」发起请求。JdkHttpClientRequest 实现了对 JDK 中的 HttpURLConnection 的封装。
 
 
@@ -359,6 +365,8 @@ Nacos Client 获取目标服务(列表)的请求，是在其第一次访问（�
 ---
 
 ### **Nacos Server 重要 API**
+
+Nacos 的服务端就是 nacos-naming 模块，就是一个 springboot 项目
 
 #### **InstanceController**
 

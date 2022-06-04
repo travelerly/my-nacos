@@ -123,11 +123,12 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
     }
 
     /**
-     * Process client beat.
+     * 执行客户端发送过来的实例心跳。Process client beat.
      *
      * @param rsInfo metrics info of server
      */
     public void processClientBeat(final RsInfo rsInfo) {
+        // 创建一个客户端心跳检测器对象
         ClientBeatProcessor clientBeatProcessor = new ClientBeatProcessor();
         clientBeatProcessor.setService(this);
         clientBeatProcessor.setRsInfo(rsInfo);
@@ -176,29 +177,40 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         return KeyBuilder.matchInstanceListKey(key, namespaceId, getName());
     }
 
+    /**
+     * 当该服务下的实例发生变化时，就会回调该监听方法
+     * @param key   名称空间 id + 服务名称，例如：com.alibaba.nacos.naming.iplist.ephemeral.namespaceId##serviceName
+     * @param value 变化之后该服务下最新的实例集合。data of the key
+     * @throws Exception
+     */
     @Override
     public void onChange(String key, Instances value) throws Exception {
 
         Loggers.SRV_LOG.info("[NACOS-RAFT] datum is changed, key: {}, value: {}", key, value);
 
+        // 遍历最新的实例集合
         for (Instance instance : value.getInstanceList()) {
 
             if (instance == null) {
-                // Reject this abnormal instance list:
+                // 若实例为 null，则抛出异常。Reject this abnormal instance list:
                 throw new RuntimeException("got null instance " + key);
             }
 
             if (instance.getWeight() > 10000.0D) {
+                // 设置权重最大只能是 10000
                 instance.setWeight(10000.0D);
             }
 
             if (instance.getWeight() < 0.01D && instance.getWeight() > 0.0D) {
+                // 若设置的权重小于 0.01，并大于 0，则就将其强制设置为 0.01
                 instance.setWeight(0.01D);
             }
         }
 
+        // 更新该服务下最新的实例
         updateIPs(value.getInstanceList(), KeyBuilder.matchEphemeralInstanceListKey(key));
 
+        // 重新计算该服务的校验和
         recalculateChecksum();
     }
 
@@ -228,17 +240,21 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
     }
 
     /**
+     * 更新该服务下最新的实例。
+     * 通过写时复制的方式，更新的时候，先去复制出原来的一份实例集合，在复制的这个集合上面进行修改，最后替换掉原来旧的集合。
      * Update instances.
      *
-     * @param instances instances
-     * @param ephemeral whether is ephemeral instance
+     * @param instances 该服务下最新的实例集合。instances
+     * @param ephemeral 是否为临时实例标识。whether is ephemeral instance
      */
     public void updateIPs(Collection<Instance> instances, boolean ephemeral) {
+        // 存放该服务下的最新的实例（复制一份实例集合）
         Map<String, List<Instance>> ipMap = new HashMap<>(clusterMap.size());
         for (String clusterName : clusterMap.keySet()) {
             ipMap.put(clusterName, new ArrayList<>());
         }
 
+        // 遍历该服务下最新的实例集合
         for (Instance instance : instances) {
             try {
                 if (instance == null) {
@@ -250,6 +266,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
                     instance.setClusterName(UtilsAndCommons.DEFAULT_CLUSTER_NAME);
                 }
 
+                // 如果服务下面没有这个新增实例所在的集群，则在该服务下初始化一个集群
                 if (!clusterMap.containsKey(instance.getClusterName())) {
                     Loggers.SRV_LOG
                             .warn("cluster: {} not found, ip: {}, will create new cluster with default configuration.",
@@ -259,12 +276,14 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
                     getClusterMap().put(instance.getClusterName(), cluster);
                 }
 
+                // 如果该服务下面没有这个新增实例所在的集群，同时也在复制出来的实例集合中初始化一个集群
                 List<Instance> clusterIPs = ipMap.get(instance.getClusterName());
                 if (clusterIPs == null) {
                     clusterIPs = new LinkedList<>();
                     ipMap.put(instance.getClusterName(), clusterIPs);
                 }
 
+                // 把新增的是放到复制的实例集合中
                 clusterIPs.add(instance);
             } catch (Exception e) {
                 Loggers.SRV_LOG.error("[NACOS-DOM] failed to process ip: " + instance, e);
@@ -295,10 +314,13 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
     }
 
     /**
-     * Init service.
+     * 对该服务进行初始化工作。Init service.
      */
     public void init() {
-        // 开启定时清除过期的临时 Instance 实例数据任务
+        /**
+         * 开启定时清除过期的临时 Instance 实例数据任务
+         * 往实例健康检查组件中添加了健康检查任务，延迟 5s 开始，每 5s 执行一次
+         */
         HealthCheckReactor.scheduleCheck(clientBeatCheckTask);
         // 开启了当前服务所包含的所有 Cluster 的健康检测任务
         for (Map.Entry<String, Cluster> entry : clusterMap.entrySet()) {

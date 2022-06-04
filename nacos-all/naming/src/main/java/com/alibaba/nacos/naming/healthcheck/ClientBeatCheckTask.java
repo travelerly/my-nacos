@@ -73,13 +73,16 @@ public class ClientBeatCheckTask implements Runnable {
         return KeyBuilder.buildServiceMetaKey(service.getNamespaceId(), service.getName());
     }
 
-    @Override
     // 清除过期的临时 Instance 实例数据
+    @Override
     public void run() {
         try {
 
             if (!getDistroMapper().responsible(service.getName())) {
-                // 若当前 Service 不需要当前 Server 负责，则直接结束
+                /**
+                 * 若当前 Service 不需要当前 Server 负责，则直接结束
+                 * 说明当前节点不需要进行服务实例的心跳检查(由其他节点负责)
+                 */
                 return;
             }
 
@@ -105,14 +108,16 @@ public class ClientBeatCheckTask implements Runnable {
                                             instance.getIp(), instance.getPort(), instance.getClusterName(),
                                             service.getName(), UtilsAndCommons.LOCALHOST_SITE,
                                             instance.getInstanceHeartBeatTimeOut(), instance.getLastBeat());
-                            // 当前服务发生了状态变更，发布状态变更事件
+                            // 当前服务发生了状态变更，发布状态变更事件，推送该服务下最新的实例信息给客户端
                             getPushService().serviceChanged(service);
+                            // 发送一个实例心跳非健康的事件
                             ApplicationUtils.publishEvent(new InstanceHeartbeatTimeoutEvent(this, instance));
                         }
                     }
                 }
             }
 
+            // 是否需要判断实例的过期状态，默认需要，如果不需要，就不走下面检查实例过期状态的逻辑了
             if (!getGlobalConfig().isExpireInstance()) {
                 return;
             }
@@ -124,7 +129,7 @@ public class ClientBeatCheckTask implements Runnable {
                     // 跳过持久实例
                     continue;
                 }
-                // 若当前时间距离上次心跳时间超过 30s，则将当前实例"清除"
+                // 若当前时间距离上次心跳时间超过 30s，说明该实例已经过期了，则将当前实例"清除"
                 if (System.currentTimeMillis() - instance.getLastBeat() > instance.getIpDeleteTimeout()) {
                     // delete instance
                     Loggers.SRV_LOG.info("[AUTO-DELETE-IP] service: {}, ip: {}", service.getName(),
@@ -140,7 +145,7 @@ public class ClientBeatCheckTask implements Runnable {
 
     }
 
-    // "清除"实例
+    // "清除"过期实例
     private void deleteIp(Instance instance) {
 
         try {

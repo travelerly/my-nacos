@@ -63,11 +63,11 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
     @JsonIgnore
     private HealthCheckTask checkTask;
 
-    // 持久实例集合
+    // 当前集群的持久实例集合
     @JsonIgnore
     private Set<Instance> persistentInstances = new HashSet<>();
 
-    // 临时实例集合
+    // 当前集群的临时实例集合
     @JsonIgnore
     private Set<Instance> ephemeralInstances = new HashSet<>();
 
@@ -244,16 +244,20 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
      */
     public void updateIps(List<Instance> ips, boolean ephemeral) {
 
+        // 获取到该集群下旧的实例集合
         Set<Instance> toUpdateInstances = ephemeral ? ephemeralInstances : persistentInstances;
 
         HashMap<String, Instance> oldIpMap = new HashMap<>(toUpdateInstances.size());
 
+        // 遍历该集群下旧的实例集合，将旧的实例的 ip 和实例对象存入 map 中
         for (Instance ip : toUpdateInstances) {
             oldIpMap.put(ip.getDatumKey(), ip);
         }
 
+        // 找到新增的实例集合
         List<Instance> updatedIPs = updatedIps(ips, oldIpMap.values());
-        if (updatedIPs.size() > 0) {
+        if (updatedIPs.size() > 0) { // 说明更新的实例包含旧的实例，并且还有新增的实例
+            // 遍历新增的实例集合，将新增的实例添加到集群的实例集合中
             for (Instance ip : updatedIPs) {
                 Instance oldIP = oldIpMap.get(ip.getDatumKey());
 
@@ -304,8 +308,10 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
         toUpdateInstances = new HashSet<>(ips);
 
         if (ephemeral) {
+            // 更新该集合下最新的临时实例集合
             ephemeralInstances = toUpdateInstances;
         } else {
+            // 更新该集合下最新的持久实例集合
             persistentInstances = toUpdateInstances;
         }
     }
