@@ -35,6 +35,7 @@ import org.springframework.util.StringUtils;
 import static org.springframework.util.ReflectionUtils.rethrowRuntimeException;
 
 /**
+ * NacosServiceRegistry 是 Spring 的注册/发现的规约接口 ServiceRegistry 的实现类
  * @author xiaojing
  * @author <a href="mailto:mercyblitz@gmail.com">Mercy</a>
  * @author <a href="mailto:78552423@qq.com">eshun</a>
@@ -63,15 +64,19 @@ public class NacosServiceRegistry implements ServiceRegistry<Registration> {
 	@Override
 	public void register(Registration registration) {
 
+		// 判断 ServiceId 是否为空，也就是 spring.application.name 不能为空；
 		if (StringUtils.isEmpty(registration.getServiceId())) {
 			log.warn("No service to register for nacos client...");
 			return;
 		}
 
+		// 获取 nacos 的命名服务(NacosNamingService)，其实就是注册中心服务；
 		NamingService namingService = namingService();
+		// 获取 serviceid 和 groupId
 		String serviceId = registration.getServiceId();
 		String group = nacosDiscoveryProperties.getGroup();
 
+		// 封装服务实例的基本信息，如 cluster-name、是否为临时实例、权重、IP、端口等；
 		Instance instance = getNacosInstanceFromRegistration(registration);
 
 		try {

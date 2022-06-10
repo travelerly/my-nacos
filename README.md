@@ -172,9 +172,10 @@ private final NamingProxy serverProxy;
 
 1. spring-cloud-starter-alibaba-nacos-discovery→spring-cloud-commons→spring.factories→**AutoServiceRegistrationAutoConfiguration.class**→@Autowired AutoServiceRegistration
 2. spring-cloud-starter-alibaba-nacos-discovery→spring.factories→NacosServiceRegistryAutoConfiguration
-3. 即应用启动会自动注入 NacosServiceRegistryAutoConfiguration，它会创建 **NacosAutoServiceRegistration**，是 AutoServiceRegistration 的实现类
 
 > 若要使得某个注册中心与 Spring Cloud 整合后，完成客户端-Client 的自动注册，那么就需要该注册中心的客户端的依赖实现 AutoServiceRegistrationAutoConfiguration 的规范，确切的说是要自定义一个 Starter，完成 AutoServiceRegistration 实例的创建与注入。
+>
+> Nacos 客户端是基于 SpringBoot 的自动装配实现的，可以在 nacos-discovery 依赖中找到 nacos 自动装配信息 NacosServiceRegistryAutoConfiguration，它会创建 NacosAutoServiceRegistration，其是 AutoServiceRegistration 的实现类
 
 ```java
 // 应用启动，加载 NacosServiceRegistryAutoConfiguration
@@ -198,22 +199,37 @@ public class NacosServiceRegistryAutoConfiguration {
 }
 ```
 
+<img src="doc/nacos 客户端注册流程.png" alt="目录位置" style="zoom: 33%;" />
+
 <br>
 
 **自动注册原理：**
 
-其实就是利用了 Spring 事件机制完成的。Naocs 利用 Spring 的时间机制去实现，就是用 SpringCloud 中对于注册中心的一个标准，该标准就是 springcloud-commons 这个包规定的。其中 **AbstractAutoServiceRegistration**，这个类主要是完成自动注册的一个抽象流程，具体的注册逻辑就需要具体的注册中心自己实现，这个类是一个抽象类，同时也实现了 ApplicationListener 接口，并且接口泛型为 WebServerInitializedEvent，作用就是这个类具有了监听器的功能，监听的事件为 WebServerInitializedEvent，当监听到这个事件的时候，就调用 **onApplicationEvent** 方法，最终会调到 start() 方法，然后继续调用到 register 方法，实现注册。
+其实就是利用了 Spring 事件机制完成的。Naocs 利用 Spring 的事件机制去实现，就是用 SpringCloud 中对于注册中心的一个标准，该标准就是 springcloud-commons 这个包规定的。其中 **AbstractAutoServiceRegistration**，这个类主要是完成自动注册的一个抽象流程，具体的注册逻辑就需要具体的注册中心自己实现，这个类是一个抽象类，同时也实现了 ApplicationListener 接口，并且接口泛型为 WebServerInitializedEvent，作用就是这个类具有了监听器的功能，监听的事件为 WebServerInitializedEvent，当监听到这个事件的时候，就调用 **onApplicationEvent** 方法，最终会调到 start() 方法，然后继续调用到 register 方法，实现注册。
 
-
+<br>
 
 **NacosAutoServiceRegistration 是如何完成自动注册的**？
 
-1. **NacosAutoServiceRegistration** 实现了 AbstractAutoServiceRegistration
-2. AbstractAutoServiceRegistration 实现了 **ApplicationListener**<WebServerInitializedEvent>，即实现了对 web 容器启动初始化的监听
-3. Tomcat 启动后会触发监听器 ApplicationListener 调用 onApplicationEvent() 方法，发送事件，即 **AbstractAutoServiceRegistration.onApplicationEvent()**→bind(event)→AbstractAutoServiceRegistration.start()→register()→**AbstractAutoServiceRegistration.serviceRegistry.register()**→NacosServiceRegistry.register()→NamingService.registerInstance()→**NacosNamingService.registerInstance(String serviceName, String groupName, Instance instance)**，**即真正的客户端注册是通过 NacosNamingService 调用 registerInstance() 方法完成的。**
+1. **NacosAutoServiceRegistration** 在初始化时，其父类 AbstractAutoServiceRegistration 也被初始化了，
+2. AbstractAutoServiceRegistration 实现了 **ApplicationListener**<WebServerInitializedEvent>，即实现了对 web 容器启动初始化的监听，web 服务初始化完成后，最终会执行其 bind 方法
+3. Tomcat 启动后会触发监听器 ApplicationListener 调用 onApplicationEvent() 方法，发送事件，即 **AbstractAutoServiceRegistration.onApplicationEvent()**→**bind(event)**→AbstractAutoServiceRegistration.start()→register()→**AbstractAutoServiceRegistration.serviceRegistry.register()**→NacosServiceRegistry.register()→NamingService.registerInstance()→**NacosNamingService.registerInstance(String serviceName, String groupName, Instance instance)**，**即真正的客户端注册是通过 NacosNamingService 调用 registerInstance() 方法完成的。**
 3. **即 NacosAutoServiceRegistration 实现了对 web 容器启动初始化的监听，Tomcat 启动后会触发 NacosAutoServiceRegistration 的回调，层层调用，就会执行客户端的注册请求。**
 
 <br>
+
+**NacosNamingService**
+
+可以完成 Client 与 Server 间的通信，提供了以下功能：
+
+1. 注册/取消注册
+2. 订阅/取消订阅
+3. 获取 server 状态
+4. 获取 server 中指定的 Instance
+
+<br>
+
+#### Nacos Client 注册功能
 
 **NacosNamingService.registerInstance**(String serviceName, String groupName, Instance instance)
 
@@ -230,28 +246,26 @@ public void registerInstance(String serviceName, String groupName, Instance inst
         // 临时实例，向服务端发送心跳请求。「定时任务」
         beatReactor.addBeatInfo(groupedServiceName, beatInfo);
     }
-    // 向服务端发送注册请求
+    // 向服务端发送注册请求，最终由 NacosProxy 的 registerService 方法处理
     serverProxy.registerService(groupedServiceName, groupName, instance);
 }
 ```
 
 1. **心跳请求**：BeatReactor.addBeatInfo(groupedServiceName, beatInfo)
-
     - 通过使用一个「one-shot action」一次性定时任务，来发送心跳请求，当 BeatTask 在执行完任务后会再创建一个相同的一次性定时任务，用于发送下一次的心跳请求，这样就实现了一次性定时任务的循环执行。
-
+    
     - **发送心跳的定时任务是由一个新的线程执行的**。
-
+    
     - groupedServiceName 的格式：**my_group@@colin-nacos-consumer**
-
+    
     - beatInfo：心跳信息数据
-
+    
 2. **注册请求**：NamingProxy.registerService(groupedServiceName, groupName, instance)
 - 如果 Nacos 指定了连接的 server 地址，则尝试连接这个指定的 server 地址，若连接失败，会尝试连接三次（默认值，可配置），若始终失败，会抛出异常；
   
 - 如果 Nacos 没有指定连接的 server 地址，Nacos 会首次按获取到其配置的所有 server 地址，然后再随机选择一个 server 进行连接，如果连接失败，其会以轮询方式再尝试连接下一台，直到将所有 server 都进行了尝试，如果最终没有任何一台能够连接成功，则会抛出异常；
   
 - 底层使用 Nacos 自定义的一个 HttpClientRequest「JdkHttpClientRequest」发起请求。JdkHttpClientRequest 实现了对 JDK 中的 HttpURLConnection 的封装。
-
 
 <br>
 

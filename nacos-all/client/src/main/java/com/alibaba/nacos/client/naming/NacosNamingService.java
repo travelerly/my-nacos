@@ -50,7 +50,7 @@ import java.util.Properties;
  * @author nkorange
  *
  * 可以完成 Client 与 Server 间的通信
- * 例如："注册/取消注册"、"订阅/取消订阅"、"获取 Server 状态"、"获取 Server 中指定的 Instance"……
+ * 提供了以下功能："注册/取消注册"、"订阅/取消订阅"、"获取 Server 状态"、"获取 Server 中指定的 Instance"……
  * 但心跳功能不是通过此类实现的。
  */
 @SuppressWarnings("PMD.ServiceOrDaoClassShouldEndWithImplRule")
@@ -209,8 +209,9 @@ public class NacosNamingService implements NamingService {
     // Nacos Client 的注册(包括注册与心跳)
     @Override
     public void registerInstance(String serviceName, String groupName, Instance instance) throws NacosException {
+        // 检测超时参数是否异常，心跳超时时间（默认 15s）必须大于心跳周期（默认 15s）
         NamingUtils.checkInstanceIsLegal(instance);
-        // 生成格式：my_group@@colin-nacos-consumer
+        // 生成格式：groupName@@serviceId，例如：my_group@@colin-nacos-consumer
         String groupedServiceName = NamingUtils.getGroupedName(serviceName, groupName);
         // 判断当前实例是否为临时实例「默认为临时实例」
         if (instance.isEphemeral()) {
@@ -219,7 +220,7 @@ public class NacosNamingService implements NamingService {
             // 临时实例，向服务端发送心跳请求。「定时任务」
             beatReactor.addBeatInfo(groupedServiceName, beatInfo);
         }
-        // 向服务端发送注册请求
+        // 向服务端发送注册请求，最终由 NacosProxy 的 registerService 方法处理
         serverProxy.registerService(groupedServiceName, groupName, instance);
     }
 

@@ -43,6 +43,7 @@ public class NacosAutoServiceRegistration
 	public NacosAutoServiceRegistration(ServiceRegistry<Registration> serviceRegistry,
 			AutoServiceRegistrationProperties autoServiceRegistrationProperties,
 			NacosRegistration registration) {
+		// 初始化父类 AbstractAutoServiceRegistration，其是一个实现了 web 容器启动初始化的监听器
 		super(serviceRegistry, autoServiceRegistrationProperties);
 		this.registration = registration;
 	}
