@@ -409,7 +409,7 @@ public class NamingProxy implements Closeable {
     }
 
     /**
-     * Send beat.
+     * 发送心跳。Send beat.
      *
      * @param beatInfo         beat info
      * @param lightBeatEnabled light beat
@@ -421,6 +421,7 @@ public class NamingProxy implements Closeable {
         if (NAMING_LOGGER.isDebugEnabled()) {
             NAMING_LOGGER.debug("[BEAT] {} sending beat to server: {}", namespaceId, beatInfo.toString());
         }
+        // 组织请求参数
         Map<String, String> params = new HashMap<String, String>(8);
         Map<String, String> bodyMap = new HashMap<String, String>(2);
         if (!lightBeatEnabled) {
@@ -431,7 +432,7 @@ public class NamingProxy implements Closeable {
         params.put(CommonParams.CLUSTER_NAME, beatInfo.getCluster());
         params.put("ip", beatInfo.getIp());
         params.put("port", String.valueOf(beatInfo.getPort()));
-        // 发送 PUT 请求
+        // 发送 PUT 类型的心跳请求，请求路径是：/v1/ns/instance/beat
         String result = reqApi(UtilAndComs.nacosUrlBase + "/instance/beat", params, bodyMap, HttpMethod.PUT);
         return JacksonUtils.toObj(result);
     }

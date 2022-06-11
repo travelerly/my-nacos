@@ -490,7 +490,7 @@ public class ServiceManager implements RecordListener<Service> {
      * @throws NacosException
      */
     public void createEmptyService(String namespaceId, String serviceName, boolean local) throws NacosException {
-        // local 为 true，表示当前实例为临时实例
+        // 如果服务不存在，则创建新的服务。local 为 true，表示当前实例为临时实例
         createServiceIfAbsent(namespaceId, serviceName, local, null);
     }
 
@@ -507,7 +507,7 @@ public class ServiceManager implements RecordListener<Service> {
      */
     public void createServiceIfAbsent(String namespaceId, String serviceName, boolean local, Cluster cluster)
             throws NacosException {
-        // 根据 namespaceId 和 serviceName 在本地注册表中查找当前准备注册的服务对应的 Service
+        // 尝试获取服务，根据 namespaceId 和 serviceName 在本地注册表中查找当前准备注册的服务对应的 Service
         Service service = getService(namespaceId, serviceName);
 
         if (service == null) {
@@ -563,7 +563,7 @@ public class ServiceManager implements RecordListener<Service> {
      */
     public void registerInstance(String namespaceId, String serviceName, Instance instance) throws NacosException {
         /**
-         * 如果注册表中没有当前将要注册的服务，则创建这个服务对应的 Service ，并添加进注册表中，
+         * 如果注册表中没有当前将要注册的服务，说明是第一次注册，则创建这个服务对应的 Service ，并添加进注册表中，
          * 1.此时注册表仅仅保存了该服务的 namespaceId 和 serviceName 等信息，与该服务的具体主机 Instance 实例数据无关。
          * 2.同时开启定时清除过期的服务实例数据任务，开启当前服务所包含的所有 Cluster 的健康检测任务
          * 3.针对当前注册的实例的持久实例、临时实例，在 Nacos Server 集群中添加监听
@@ -582,7 +582,9 @@ public class ServiceManager implements RecordListener<Service> {
                     "service not found, namespace: " + namespaceId + ", service: " + serviceName);
         }
 
-        // 向服务对象中添加服务实例。利用一致性服务，将当前准备注册的服务的 Instance 实例数据注册到所有 Nacos Server 中
+        /**
+         * 向刚创建好的 service 对象中添加需要注册的服务实例。
+         */
         addInstance(namespaceId, serviceName, instance.isEphemeral(), instance);
     }
 
@@ -708,7 +710,9 @@ public class ServiceManager implements RecordListener<Service> {
     }
 
     /**
-     * 向服务对象中添加服务实例。Add instance to service.
+     * 向服务(service)对象中添加服务实例(instance)。Add instance to service.
+     *
+     *
      *
      * @param namespaceId 名称空间 id。namespace
      * @param serviceName 服务名称。service name
@@ -719,7 +723,7 @@ public class ServiceManager implements RecordListener<Service> {
     public void addInstance(String namespaceId, String serviceName, boolean ephemeral, Instance... ips)
             throws NacosException {
         /**
-         * ips: Instance；key 区分临时实例与持久实例
+         * ips: Instance；key：监听服务列表所用到的 key，是服务的唯一标识，是区分临时实例与持久实例的
          * 临时实例返回：com.alibaba.nacos.naming.iplist.ephemeral.namespaceId##serviceName
          * 持久实例放回：com.alibaba.nacos.naming.iplist.namespaceId##serviceName
          */
@@ -728,24 +732,32 @@ public class ServiceManager implements RecordListener<Service> {
         /**
          * 获取服务对象
          * 从注册表中获取当前准备注册的服务 Service 对象，此时 Service 中没有具体的主机 Instance 实例数据
-         * (若当前要注册的服务的 Instance 是这个服务的第一个实例，则该 Service 与具体主机的 Instance 实例数据无关)
+         * 若当前要注册的服务的 Instance 是这个服务的第一个实例，则该 Service 与具体主机的 Instance 实例数据无关
          */
         Service service = getService(namespaceId, serviceName);
 
         // 对服务对象加锁，使得同一服务下的实例串行注册
         synchronized (service) {
             /**
-             * 获取到新增实例之后，该服务下最新的实例集合
+             * 获取到新增实例之后，该服务下最新的实例集合，即获取要更新的实例列表
              * 将当前准备注册的服务的 Instance 实例数据添加到 Service 中，即写入到了注册表中。ips: 要注册的 Instance
              * 返回的 instanceList 是本次注册的服务相关的所有 Instance 实例集合。
+             *
+             * addIpAddresses 会拷贝旧的实例列表，将新的实例添加到旧的实例列表中，并返回新的实例列表
              */
             List<Instance> instanceList = addIpAddresses(service, ephemeral, ips);
 
-            // 创建一个 Instances 对象，把原来的实例+要注册的实例存放到这个对象中。
+            // 创建一个 Instances 对象，把原来的实例+要注册的实例存放到这个对象中，后面更新注册表时使用。
             Instances instances = new Instances();
             instances.setInstanceList(instanceList);
 
-            // 同步数据到 nacos 集群中的其它节点。对于 AP 模式，具体的持久化组件是 DistroConsistencyServiceImpl。
+            /**
+             * 完成注册更新，以及 nacos 集群的数据同步
+             * naocs 集群一致性，同步数据到 nacos 集群中的其它节点。对于 AP 模式，具体的组件是 DistroConsistencyServiceImpl。
+             * consistencyService 是集群一致性接口，将集群一致性委托给具体的实现类：
+             * 临时实例，委托后采用 nacos 自定义的 Distro 协议实现集群一致性，具体的组件是 DistroConsistencyServiceImpl
+             * 永久实例，委托后采用简化的 Raft 协议实现集群一致性，具体的组件是 PersistentConsistencyServiceDelegateImpl。
+             */
             consistencyService.put(key, instances);
         }
     }
@@ -863,8 +875,8 @@ public class ServiceManager implements RecordListener<Service> {
 
     /**
      * 修改当前 Service 的 Instance 的列表，分为"添加实例"与"删除实例"两种情况。
-     * 并返回本次注册的服务相关的所有 Instance 实例集合
-     * 主要就是获取到原来内存中的所有实例集合，然后再这个集合中新增或者删除实例，最后返回操作之后的实例集合
+     * 并返回服务的最终的所有 Instance 实例集合
+     * 主要就是拷贝一份原来内存中的所有实例集合，作为临时集合，然后在这个临时集合中新增或者删除实例，最后返回操作之后的临时集合
      * 对于服务注册，方法返回的就是原来的实例 + 要注册的实例（新增实例）
      *
      * Compare and get new instance list.
@@ -877,15 +889,22 @@ public class ServiceManager implements RecordListener<Service> {
      */
     public List<Instance> updateIpAddresses(Service service, String action, boolean ephemeral, Instance... ips)
             throws NacosException {
-        // 获取该服务下所有的服务实例
+        // 获取远程注册表中该服务的实例数据（根据 namespaceId 和 serviceName 进行查找），对于第一次注册的服务，查找会返回 null
         Datum datum = consistencyService
                 .get(KeyBuilder.buildInstanceListKey(service.getNamespaceId(), service.getName(), ephemeral));
-        // 获取本地注册表中该服务的所有临时/持久实例。（ephemeral=treu：临时实例；ephemeral=false：临时实例+持久实例）
-        List<Instance> currentIPs = service.allIPs(ephemeral);
-        Map<String, Instance> currentInstances = new HashMap<>(currentIPs.size());
 
+        /**
+         * 获取本地注册表中该服务的所有临时/持久实例，即获取服务中现有的实例列表
+         * ephemeral=treu：临时实例；ephemeral=false：临时实例+持久实例
+         */
+        List<Instance> currentIPs = service.allIPs(ephemeral);
+
+        // 创建一个临时集合，用于存当前服务中现有的实例列表，即拷贝一份现有(旧)的实例列表数据
+        Map<String, Instance> currentInstances = new HashMap<>(currentIPs.size());
+        // 创建一个临时集合，保存实例的 instanceId，用于判断实例是否已经存在
         Set<String> currentInstanceIds = Sets.newHashSet();
-        // 遍历从本地注册表中获取到的所有 Instance 实例数据
+
+        // 遍历从本地注册表中获取到的所有 Instance 实例数据，即将旧实例数据拷贝至临时集合中
         for (Instance instance : currentIPs) {
             // currentInstances 保存了本地注册表中当前服务的所有主机实例数据。key：ip:port；value:instance。
             currentInstances.put(instance.toIpAddr(), instance);
@@ -893,12 +912,20 @@ public class ServiceManager implements RecordListener<Service> {
             currentInstanceIds.add(instance.getInstanceId());
         }
 
-        // 统计出本地注册表与远程注册表中当前服务的"最新实例"集合（本地有远程数据，则以本地数据为主；若本地没有远程数据，则以远程数据为主）
+        // 保存更新后的实例列表，即最新的实例列表
         Map<String, Instance> instanceMap;
+
+        /**
+         * 统计出本地注册表与远程注册表中当前服务的"最新实例"集合（本地有远程数据，则以本地数据为主；若本地没有远程数据，则以远程数据为主）
+         */
         if (datum != null && null != datum.value) {
-            // instanceMap：封装了远程属于与本地数据对比后的最新数据。
+            /**
+             * 如果远程注册表中已经存在旧数据，则先保存旧的实例数据。instanceMap：封装了远程属于与本地数据对比后的最新数据。
+             * 即封装远程与本地数据对比后的最新的数据（本地有远程数据，则以本地数据为主；若本地没有远程数据，则以远程数据为主）
+             */
             instanceMap = setValid(((Instances) datum.value).getInstanceList(), currentInstances);
         } else {
+            // 如果服务中不存在旧数据，则创建一个空 map
             instanceMap = new HashMap<>(ips.length);
         }
 
@@ -927,7 +954,7 @@ public class ServiceManager implements RecordListener<Service> {
                 // REMOVE。针对删除请求，将当前要变更的 Instance 数据从"最新实例"集合中删除
                 instanceMap.remove(instance.getDatumKey());
             } else {
-                // ADD。针对添加-注册请求
+                // ADD。针对添加-注册请求，从最新的实例数据列表中获取当前要注册的 Instance 数据
                 Instance oldInstance = instanceMap.get(instance.getDatumKey());
                 if (oldInstance != null) {
                     // 说明遍历到的这个实例已经存在于本地注册表中，则直接使用旧实例的 id
@@ -948,13 +975,22 @@ public class ServiceManager implements RecordListener<Service> {
                     "ip list can not be empty, service: " + service.getName() + ", ip list: " + JacksonUtils
                             .toJson(instanceMap.values()));
         }
-        // instanceMap：包含本次变更的服务的所有 Instance 的最新数据。
+
+        // 返回最新的服务实例列表，instanceMap：包含本次变更的服务的所有 Instance 的最新数据。
         return new ArrayList<>(instanceMap.values());
     }
 
+    /**
+     * 将当前准备要删除的服务的 Instance 实例数据从 Service 中删除
+     * @param service 服务对象
+     * @param ephemeral 是否为临时实例标识
+     * @param ips 要删除的 Instance
+     * @return
+     * @throws NacosException
+     */
     private List<Instance> substractIpAddresses(Service service, boolean ephemeral, Instance... ips)
             throws NacosException {
-        // updateIpAddresses 变更分两种情况：1.ADD；2.REMOVE。本次为 REMOVE
+        // 变更当前 Service 的 Instance 的列表，变更分两种情况：1.ADD-添加实例；2.REMOVE-删除实例。本次为 REMOVE-删除实例
         return updateIpAddresses(service, UtilsAndCommons.UPDATE_INSTANCE_ACTION_REMOVE, ephemeral, ips);
     }
 
@@ -967,7 +1003,7 @@ public class ServiceManager implements RecordListener<Service> {
      * @throws NacosException
      */
     private List<Instance> addIpAddresses(Service service, boolean ephemeral, Instance... ips) throws NacosException {
-        // 修改当前 Service 的 Instance 的列表，分两种情况：1.ADD-添加实例；2.REMOVE-删除实例。
+        // 变更当前 Service 的 Instance 的列表，变更分两种情况：1.ADD-添加实例；2.REMOVE-删除实例。本次为 ADD-添加实例
         return updateIpAddresses(service, UtilsAndCommons.UPDATE_INSTANCE_ACTION_ADD, ephemeral, ips);
     }
 
@@ -976,7 +1012,7 @@ public class ServiceManager implements RecordListener<Service> {
         Map<String, Instance> instanceMap = new HashMap<>(oldInstances.size());
         // 遍历"远程"实例数据
         for (Instance instance : oldInstances) {
-            // 根据"远程"实例数据的"ip:port"，从本地注册表中查找当前服务的主机实例数据
+            // 根据"远程"实例数据的"ip:port"，从本地注册表中查找当前遍历到的服务的主机实例数据
             Instance instance1 = map.get(instance.toIpAddr());
             if (instance1 != null) {
                 // 若当前遍历到的"远程"主机实例数据在本地注册表中也存在，则以本地注册表中数据为主，将"远程"主机实例数据替换掉。

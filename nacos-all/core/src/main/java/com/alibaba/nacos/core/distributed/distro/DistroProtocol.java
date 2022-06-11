@@ -113,10 +113,18 @@ public class DistroProtocol {
      * @param action    the action of data operation
      */
     public void sync(DistroKey distroKey, DataOperation action, long delay) {
+        // 遍历 nacos 集群中除了自己以外的其它节点
         for (Member each : memberManager.allMembersWithoutSelf()) {
             DistroKey distroKeyWithTarget = new DistroKey(distroKey.getResourceKey(), distroKey.getResourceType(),
                     each.getAddress());
+            // 定义一个 Distro 的同步任务，任务被封装成 DistroDelayTask 对象
             DistroDelayTask distroDelayTask = new DistroDelayTask(distroKeyWithTarget, action, delay);
+            // 交给线程去执行
+            /**
+             * 交给线程去执行
+             * distroTaskEngineHolder.getDelayTaskExecuteEngine() 的返回值是 DistroDelayTaskExecuteEngine，
+             * DistroDelayTaskExecuteEngine 维护了一个线程池，并且接收任务，执行任务。
+             */
             distroTaskEngineHolder.getDelayTaskExecuteEngine().addTask(distroKeyWithTarget, distroDelayTask);
             if (Loggers.DISTRO.isDebugEnabled()) {
                 Loggers.DISTRO.debug("[DISTRO-SCHEDULE] {} to {}", distroKey, each.getAddress());

@@ -237,7 +237,7 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
     }
 
     /**
-     * Update instance list.
+     * 更新注册表。Update instance list.
      *
      * @param ips       instance list
      * @param ephemeral whether these instances are ephemeral
@@ -282,6 +282,7 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
             }
         }
 
+        // 检测新加入实例的状态
         List<Instance> newIPs = subtract(ips, oldIpMap.values());
         if (newIPs.size() > 0) {
             Loggers.EVT_LOG
@@ -293,6 +294,7 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
             }
         }
 
+        // 移除要删除的实例
         List<Instance> deadIPs = subtract(oldIpMap.values(), ips);
 
         if (deadIPs.size() > 0) {
@@ -307,6 +309,7 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
 
         toUpdateInstances = new HashSet<>(ips);
 
+        // 直接覆盖旧实例列表
         if (ephemeral) {
             // 更新该集合下最新的临时实例集合
             ephemeralInstances = toUpdateInstances;

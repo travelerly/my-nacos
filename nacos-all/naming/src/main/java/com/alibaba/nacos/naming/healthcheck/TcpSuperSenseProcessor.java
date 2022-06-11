@@ -99,6 +99,7 @@ public class TcpSuperSenseProcessor implements HealthCheckProcessor, Runnable {
         }
     }
 
+    // 执行健康检测任务
     @Override
     public void process(HealthCheckTask task) {
         // 获取当前 Cluster 中所包含的所有持久实例
@@ -128,15 +129,20 @@ public class TcpSuperSenseProcessor implements HealthCheckProcessor, Runnable {
                 continue;
             }
 
-            // 生成一个心跳实例
+            // 封装健康检测信息到 Beat 对象
             Beat beat = new Beat(ip, task);
-            // 将心跳实例添加到任务队列 taskQueue 中
+            /**
+             * 将心跳实例添加到阻塞队列 taskQueue 中，采用了异步执行的策略。
+             * TcpSuperSenseProcessor 本身就是一个 Runnable，其在构造函数中会吧自己放入到线程池中，会运行 run 方法
+             */
             taskQueue.add(beat);
             MetricsMonitor.getTcpHealthCheckMonitor().incrementAndGet();
         }
     }
 
+    // 处理健康检测的任务
     private void processTask() throws Exception {
+        // 将任务封装为一个 TaskProcessor，并放入集合中。TaskProcessor 是一个 Callable，其中 call 方法来处理任务。
         Collection<Callable<Void>> tasks = new LinkedList<>();
         do {
             Beat beat = taskQueue.poll(CONNECT_TIMEOUT_MS / 2, TimeUnit.MILLISECONDS);
@@ -147,6 +153,7 @@ public class TcpSuperSenseProcessor implements HealthCheckProcessor, Runnable {
             tasks.add(new TaskProcessor(beat));
         } while (taskQueue.size() > 0 && tasks.size() < NIO_THREAD_COUNT * 64);
 
+        // 批量处理集合中的任务
         for (Future<?> f : GlobalExecutor.invokeAllTcpSuperSenseTask(tasks)) {
             f.get();
         }
@@ -156,6 +163,7 @@ public class TcpSuperSenseProcessor implements HealthCheckProcessor, Runnable {
     public void run() {
         while (true) {
             try {
+                // 处理任务，通过此方法来处理健康检测的任务。
                 processTask();
 
                 int readyCount = selector.selectNow();
@@ -366,8 +374,10 @@ public class TcpSuperSenseProcessor implements HealthCheckProcessor, Runnable {
             this.beat = beat;
         }
 
+        // 处理任务
         @Override
         public Void call() {
+            // 获取检测任务已经等待的时长
             long waited = System.currentTimeMillis() - beat.getStartTime();
             if (waited > MAX_WAIT_TIME_MILLISECONDS) {
                 Loggers.SRV_LOG.warn("beat task waited too long: " + waited + "ms");
@@ -375,8 +385,10 @@ public class TcpSuperSenseProcessor implements HealthCheckProcessor, Runnable {
 
             SocketChannel channel = null;
             try {
+                // 获取实例信息
                 Instance instance = beat.getIp();
 
+                // 通过 NIO 建立 TCP 连接
                 BeatKey beatKey = keyMap.get(beat.toString());
                 if (beatKey != null && beatKey.key.isValid()) {
                     if (System.currentTimeMillis() - beatKey.birthTime < TCP_KEEP_ALIVE_MILLIS) {
@@ -400,6 +412,7 @@ public class TcpSuperSenseProcessor implements HealthCheckProcessor, Runnable {
                 int port = cluster.isUseIPPort4Check() ? instance.getPort() : cluster.getDefCkport();
                 channel.connect(new InetSocketAddress(instance.getIp(), port));
 
+                // 注册连接，读取事件
                 SelectionKey key = channel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
                 key.attach(beat);
                 keyMap.put(beat.toString(), new BeatKey(key));

@@ -60,6 +60,7 @@ public class BeatReactor implements Closeable {
 
     public BeatReactor(NamingProxy serverProxy, int threadCount) {
         this.serverProxy = serverProxy;
+        // 线程池
         this.executorService = new ScheduledThreadPoolExecutor(threadCount, new ThreadFactory() {
             @Override
             public Thread newThread(Runnable r) {
@@ -94,6 +95,8 @@ public class BeatReactor implements Closeable {
         dom2Beat.put(key, beatInfo);
         /**
          * 开启一个发送心跳的定时任务
+         * 利用线程池，定期执行心跳任务，周期为 beatInfo.getPeriod()
+         * 心跳周期的默认值在 com.alibaba.nacos.api.common.Constants 类中，默认间隔 5s 发送一次心跳
          * one-shot action：一次性任务，BeatTask 会在任务执行完成时再开启一个任务，使得心跳任务是一个重复的循环任务）
          */
         executorService.schedule(new BeatTask(beatInfo), beatInfo.getPeriod(), TimeUnit.MILLISECONDS);
@@ -172,6 +175,7 @@ public class BeatReactor implements Closeable {
             if (beatInfo.isStopped()) {
                 return;
             }
+            // 获取心跳周期
             long nextTime = beatInfo.getPeriod();
             try {
                 // 发送心跳
@@ -185,6 +189,7 @@ public class BeatReactor implements Closeable {
                 if (interval > 0) {
                     nextTime = interval;
                 }
+                // 判断心跳结果
                 int code = NamingResponseCode.OK;
                 if (result.has(CommonParams.CODE)) {
                     code = result.get(CommonParams.CODE).asInt();
@@ -192,6 +197,7 @@ public class BeatReactor implements Closeable {
 
                 // 若在 server 端没有找到该 client，则 server 返回的状态码是"20404"
                 if (code == NamingResponseCode.RESOURCE_NOT_FOUND) {
+                    // 如果失败，则需要重新注册实例
                     Instance instance = new Instance();
                     instance.setPort(beatInfo.getPort());
                     instance.setIp(beatInfo.getIp());

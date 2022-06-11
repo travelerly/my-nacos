@@ -54,6 +54,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * A consistency protocol algorithm called <b>Distro</b>
+ * nacos 集群一致性协议的委托实现类，针对临时实例，nacos 自定义的 Distro 协议来实现集群一致性
  *
  * <p>Use a distro algorithm to divide data into many blocks. Each Nacos server node takes responsibility for exactly
  * one block of data. Each block of data is generated, removed and synchronized by its responsible server. So every
@@ -108,8 +109,9 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     
     @Override
     public void put(String key, Record value) throws NacosException {
+        // 先将要更新的数据写入到本地注册表中，value 就是 Instances 要更新的数据，基于线程池异步将数据写入到注册表中。
         onPut(key, value);
-        // 同步数据到 nacos 集群中的其它节点
+        // 同步数据到 nacos 集群中的其它节点，通过 Distro 协议将数据同步给集群中的其它 nacos 节点
         distroProtocol.sync(new DistroKey(key, KeyBuilder.INSTANCE_LIST_KEY_PREFIX), DataOperation.CHANGE,
                 globalConfig.getTaskDispatchPeriod() / 2);
     }
@@ -132,12 +134,14 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
      * @param value record
      */
     public void onPut(String key, Record value) {
-        // 操作的 record 是临时的，不会被持久化
+        // 判断是否是临时实例，操作的 record 是临时的，不会被持久化
         if (KeyBuilder.matchEphemeralInstanceListKey(key)) {
+            // 封装 Instances 信息到数据集 Datum 中
             Datum<Instances> datum = new Datum<>();
             datum.value = (Instances) value;
             datum.key = key;
             datum.timestamp.incrementAndGet();
+            // 放入 DataStore 中
             dataStore.put(key, datum);
         }
         
@@ -147,6 +151,7 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
         }
 
         /**
+         * 放入阻塞队列中，这里的 notifier 维护了一个阻塞队列，并基于线程池，异步执行队列中的任务。
          * 向通知线程的阻塞队列中新增一个 pair，通知线程会不断地从阻塞队列中拿到 pair 对象，
          * 根据 pair 对象的 key 从 dataStore 中获取到 datum，再从 datum 对象中获取到 record，
          * 然后根据 key 找到对应的监听器队列，根据动作类型去回调这些监听器队列所对应的方法，并把上面获取到的 record 作为参数传给监听回调方法。
@@ -413,19 +418,21 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
             if (action == DataOperation.CHANGE) {
                 services.put(datumKey, StringUtils.EMPTY);
             }
+            // 任务添加到阻塞队列中。(Notifier 是一个 Runnable，通过一个单线程的线程池来不断的从阻塞队列中获取任务并执行)
             tasks.offer(Pair.with(datumKey, action));
         }
         
         public int getTaskSize() {
             return tasks.size();
         }
-        
+
+        // 执行任务
         @Override
         public void run() {
             Loggers.DISTRO.info("distro notifier started");
 
             /**
-             * 开启一个无限循环，不断地从阻塞队列中获取 pair 对象并处理
+             * 开启一个无限循环，不断地从阻塞队列中获取 pair 对象并处理，因为是阻塞队列，并不会导致 CPU 负载过高
              * pair 对象其实就是一个键值对，key 为名称空间 id + 服务名，value 是操作类型，
              * 然后将 pair 对象交给 handle() 方法处理，
              * handle() 方法会根据 pair 对象中的 key 从 listener 集合中找到对应的监听器集合，
@@ -433,15 +440,17 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
              */
             for (; ; ) {
                 try {
-                    // 处理从 tasks 总获取到的 pair 对象
+                    // 从阻塞队列中获取任务
                     Pair<String, DataOperation> pair = tasks.take();
+                    // 处理任务，更新服务列表
                     handle(pair);
                 } catch (Throwable e) {
                     Loggers.DISTRO.error("[NACOS-DISTRO] Error while handling notifying task", e);
                 }
             }
         }
-        
+
+        // 处理任务，更新服务列表
         private void handle(Pair<String, DataOperation> pair) {
             try {
                 /**
@@ -462,18 +471,20 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
                     return;
                 }
 
-                // 回调该 key 所对应的所有监听器
+                // 遍历找到变化的 service，回调该 key 所对应的所有监听器
                 for (RecordListener listener : listeners.get(datumKey)) {
                     
                     count++;
                     
                     try {
+                        // 服务的实例列表 CHANGE 事件
                         if (action == DataOperation.CHANGE) { // 操作类型是"CHANGE"
                             // 操作类型是"CHANGE"，回调监听器的 onChange() 方法
                             listener.onChange(datumKey, dataStore.get(datumKey).value);
                             continue;
                         }
-                        
+
+                        // 服务的实例列表 DELETE 事件
                         if (action == DataOperation.DELETE) {
                             // 操作类型是"DELETE"，回调监听器的 onDelete() 方法
                             listener.onDelete(datumKey);

@@ -29,7 +29,7 @@ import com.alibaba.nacos.sys.env.EnvUtil;
 import org.springframework.stereotype.Component;
 
 /**
- * Persistent consistency service delegate.
+ * nacos 集群一致性协议的委托实现类，针对持久实例。Persistent consistency service delegate.
  *
  * @author xiweng.yy
  */

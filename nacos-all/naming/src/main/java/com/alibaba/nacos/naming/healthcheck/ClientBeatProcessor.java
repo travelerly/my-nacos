@@ -80,7 +80,7 @@ public class ClientBeatProcessor implements Runnable {
         String ip = rsInfo.getIp();
         String clusterName = rsInfo.getCluster();
         int port = rsInfo.getPort();
-        // 根据集群名称获取到对应的集群对象
+        // 获取集群信息，即根据集群名称获取到对应的集群对象
         Cluster cluster = service.getClusterMap().get(clusterName);
         // 获取当前服务集群下的所有临时实例数据。ephemeral=true：临时实例
         List<Instance> instances = cluster.allIPs(true);
@@ -91,7 +91,7 @@ public class ClientBeatProcessor implements Runnable {
                 if (Loggers.EVT_LOG.isDebugEnabled()) {
                     Loggers.EVT_LOG.debug("[CLIENT-BEAT] refresh beat: {}", rsInfo.toString());
                 }
-                // 修改心跳时间戳
+                // 更新实例的最后一次心跳时间戳 lastBeat
                 instance.setLastBeat(System.currentTimeMillis());
                 if (!instance.isMarked()) {
                     // 修改该实例的健康状态。当 instance 的 marked 属性值为 true 时，表示其为持久实例；临时实例的健康状态标识是 healthy 属性。

@@ -149,7 +149,10 @@ public class NacosDelayTaskExecuteEngine extends AbstractNacosTaskExecuteEngine<
                 continue;
             }
             try {
-                // ReAdd task if process failed
+                /**
+                 * 尝试执行同步任务，如果失败会将任务重新入队并重试，因此不保证同步结果的强一致性，属于 AP 模式的最终一致性策略。
+                 * ReAdd task if process failed
+                 */
                 if (!processor.process(task)) {
                     retryFailedTask(taskKey, task);
                 }

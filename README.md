@@ -47,6 +47,16 @@ consistency 模块缺失 entity 包中的代码，需要下载插件 protoc 手�
 
 一个 **namespace** 下可以包含有很多的 **group**，一个 **group** 下可以包含有很多的 **service**。但 **service** 并不是一个简单的微服务提供者，而是一类提供者的集合。**service** 除了包含微服务名称外，还可以包含很多的 **Cluster**，每个 **Cluster** 中可以包含很多的 **Instance** 提供者，**Instance** 才是真正的微服务提供者主机。
 
+<br>
+
+##### Nacos 注册表数据结构
+
+nacos 是多级存储模型，最外层通过 namespace 来实现环境隔离，然后是 group 分组，分组下就是服务，一个服务又可以分为不同的集群，集群中包含多个实例，因此注册表结构为一个 Map，类型是：`Map<String,Map<String,Service>>`，外层 key 是 `namespace_id`，内层 key 是 `group+serviceName`，
+
+Service 内部维护一个 Map，结构是：`Map<Strign,Cluster>`，key 是 `clusterName`，值是集群信息
+
+Cluster 内部维护了一个 Set 集合，元素是 Instance 类型，代表集群中的多个实例。
+
 ```yaml
 # nacos 客户端配置示例
 spring:
@@ -239,7 +249,7 @@ public void registerInstance(String serviceName, String groupName, Instance inst
     NamingUtils.checkInstanceIsLegal(instance);
     // 生成格式：my_group@@colin-nacos-consumer
     String groupedServiceName = NamingUtils.getGroupedName(serviceName, groupName);
-    // 判断当前实例是否为临时实例「默认为临时实例」
+    // 判断当前实例是否为临时实例「默认为临时实例」，临时实例基于心跳的方式做健康检测，永久实例则是由 nacos 主动探测实例的状态
     if (instance.isEphemeral()) {
         // 构建心跳信息数据
         BeatInfo beatInfo = beatReactor.buildBeatInfo(groupedServiceName, instance);
@@ -252,14 +262,18 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 ```
 
 1. **心跳请求**：BeatReactor.addBeatInfo(groupedServiceName, beatInfo)
+    - nacos 实例分为临时实例与永久实例，临时实例时基于心跳的方式做健康检测，而永久实例则是由 nacos 主动探测实例状态。
+
     - 通过使用一个「one-shot action」一次性定时任务，来发送心跳请求，当 BeatTask 在执行完任务后会再创建一个相同的一次性定时任务，用于发送下一次的心跳请求，这样就实现了一次性定时任务的循环执行。
-    
+
     - **发送心跳的定时任务是由一个新的线程执行的**。
-    
+
     - groupedServiceName 的格式：**my_group@@colin-nacos-consumer**
-    
+
     - beatInfo：心跳信息数据
-    
+
+    - 客户端发送心跳的请求路径：/nacos/v1/ns/instance/beat
+
 2. **注册请求**：NamingProxy.registerService(groupedServiceName, groupName, instance)
 - 如果 Nacos 指定了连接的 server 地址，则尝试连接这个指定的 server 地址，若连接失败，会尝试连接三次（默认值，可配置），若始终失败，会抛出异常；
   
@@ -272,6 +286,10 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 Nacos Client 向 Nacos Server 发送的注册、订阅、获取状态等连接请求是通过 NamingService 完成，但是心跳请求不是，心跳是通过 BeatReactor 提交的。而 Nacos Client 向 Nacos Server 发送的所有请求最终都是通过 NamingProxy 完成的提交。
 
 Nacos Client 向 Nacos Server 发送的注册、订阅、获取状态等连接请求，是 NamingProxy 分别提交的 **POST**、**PUT**、**GET** 请求。最终是通过其自研的、封装了 JDK 的 HttpURLConnection 的 HttpClientRequest 发出的请求。
+
+<br>
+
+Nacos 如何保证并发读写的安全性
 
 <br>
 
@@ -545,6 +563,20 @@ Nacos Server 对于 Nacos Client 的注册请求，主要由两大环节构成�
 
 <br>
 
+**Nacos 在处理注册请求时，如何保证并发写的安全性？**
+
+> 在注册实例时，会对 Service 加锁，不同的 Service 之间本身就不存在并发写的问题，互不影响。而相同的Service 是通过锁来互斥，并且在更新实例列表时，是基于异步的线程池来完成的，而线程池内线程的数量为 1。
+
+**Nacos 如何避免并发读写的冲突？**
+
+> nacos 在更新实例列表时，会采用 CopyOnWrite 技术，首先将旧实例列表拷贝一份，然后更新拷贝的实例列表，再用更新后的实例列表来覆盖旧实例列表。
+
+**Nacos 如何对数十万服务的并发写请求？**
+
+> nacos 内部会将服务注册的任务放入阻塞队列中，采用线程池异步来完成实例的更新，从而提高并发写能力。
+
+<br>
+
 Nacos Server 中，当一个 Service 创建完毕后，一般会为其执行三项重要操作
 
 1. 将该新建的 Service 放入到注册表中，即放入到 ServiceManager 中的 Map<String, Map<String, Service>> serviceMap 中。
@@ -578,20 +610,41 @@ Nacos Server 中，当一个 Service 创建完毕后，一般会为其执行三�
 
 该处理方式主要就是在注册表中查找这个 Instance，若没找到，则创建一个，再注册进注册表中；若找到了，则会更新其最后心跳时间戳。其中比较重要的一项工作是，若这个 Instance 的健康状态发生了变更，其会利用 PushService 发布一个服务变更事件，而 PushService 是一个监听器，会触发 PushService.onApplicationEvent()，就会触发 Nacos Server 向 Nacos Client 发送 UDP 通信，就会触发该服务的订阅者更新该服务。
 
+其实处理心跳请求的核心就是更新心跳实例的最后一次心跳时间，lastBeat，这个会成为判断实例心跳是否过期的关键指标。
+
 <br>
 
-对于心跳请求到达了服务端，而服务端注册表中却没有找到该 Instance 的情况，有以下两种可能：
+**对于心跳请求到达了服务端，而服务端注册表中却没有找到该 Instance 的情况，有以下两种可能：**
 
 1. 注册请求先提交了，但由于网络原因，该请求到达服务端之前心跳请却求先到达了；
 1. 由于网络抖动，客户端正常发送的心跳还没有到达服务端，而服务端就将这个实例 Instance 从注册表中给清除了。网络恢复后，服务端又收到了客户端发来的心跳。
 
 <br>
 
-服务端对临时实例与持久实例的健康状态的记录又什么不同？
+**服务端对临时实例与持久实例的健康状态的记录又什么不同？**
 
 - 持久实例是通过 **marked** 属性来表示的；fasle：表示实例未被标识，是健康的持久实例，true：表示实例被标识，是不健康的持久实例。
 - 临时实例是通过 **healthy** 属性来表示的；true：表示健康的临时实例，false：表示不健康的临时实例。对于临时实例，其 **marked** 属性永远为 fasle。
 - 即只要一个实例的 marked 属性为 true，那么这一定是持久实例，且为不健康的持久实例；但仅凭 marked 属性为 false，是无法判断这个实例是否为临时实例，更无法判断其健康状态。
+
+<br>
+
+**Nacos 的健康检测有两种模式：**
+
+1. 临时实例
+    - 采用客户端心跳检测模式，心跳周期为 5s
+    - 心跳间隔超过 15s 则标记为不健康
+    - 心跳间隔超 30s 则从服务列表中删除
+2. 永久实例
+    - 采用服务端主动健康检测的方式
+    - 周期为 2000 + 5000 毫秒内的随机数
+    - 检测异常只会标记为不健康，并不会删除
+
+**Nacos 为什么会有临时和永久两种实例呢？**
+
+> 以淘宝为例，双十一大促期间，流量会比平常高出很多，此服务肯定需要增加更多实例来应对高并发，而这些实例在双十一之后就无需继续使用了，采用临时实例比较合适。而对于服务的一些常备实例，则使用永久实例更合适。
+>
+> 与 Eureka 相比，Nacos 与 Eureka 在临时实例上都是基于心跳模式实现的，差别不大，主要是心跳周期不同，Eureka 是 30s，Nacos 是 5s。另外 Naocs 支持永久实例，而 Eureka 不支持。Eureka 只提供了心跳模式的健康检测，而没有主动检测功能。
 
 <br>
 

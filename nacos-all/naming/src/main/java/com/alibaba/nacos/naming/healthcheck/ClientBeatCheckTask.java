@@ -75,7 +75,7 @@ public class ClientBeatCheckTask implements Runnable {
 
 
     /**
-     * 服务端对实例进行过期下线检查，清除过期的临时 Instance 实例数据
+     * 服务心跳检测任务，即服务端对实例进行过期下线检查，清除过期的临时 Instance 实例数据
      * 先判断当前服务是否由当前节点负责
      * 然后再判断 nacos 服务是否开启了健康检查，默认时开启的，如果没有开启，则直接返回，
      * 接着就获取这个服务中所有的实例对象，遍历这些实例对象，对每一个实例对象中的最近一次心跳续约事件与当前时间进行比较，默认相差超过 15s，
@@ -110,19 +110,19 @@ public class ClientBeatCheckTask implements Runnable {
 
             // 遍历当前服务的所有临时实例，若临时实例心跳超时，则将健康状态设置为不健康，并发送服务状态变更事件。first set health status of instances:
             for (Instance instance : instances) {
-                // 若当前时间距离上次心跳时间已经超过 15s，则将当前实例状态设置为不健康
+                // 判断心跳间隔，若当前时间距离上次心跳时间已经超过 15s(默认值)，则将当前实例状态设置为不健康。
                 if (System.currentTimeMillis() - instance.getLastBeat() > instance.getInstanceHeartBeatTimeOut()) {
                     // 临时实例的"marked"属性值永久为false，若"marked"值为 true，则该实例为持久实例
                     if (!instance.isMarked()) {
                         if (instance.isHealthy()) {
-                            // 当前时间距离上次心跳时间已经超过 15s，则将当前实例状态设置为不健康
+                            // 当前时间距离上次心跳时间已经超过 15s，则将当前实例状态设置为不健康 healthy = false
                             instance.setHealthy(false);
                             Loggers.EVT_LOG
                                     .info("{POS} {IP-DISABLED} valid: {}:{}@{}@{}, region: {}, msg: client timeout after {}, last beat: {}",
                                             instance.getIp(), instance.getPort(), instance.getClusterName(),
                                             service.getName(), UtilsAndCommons.LOCALHOST_SITE,
                                             instance.getInstanceHeartBeatTimeOut(), instance.getLastBeat());
-                            // 当前服务发生了状态变更，发布状态变更事件，推送该服务下最新的实例信息给客户端
+                            // 当前服务发生了状态变更，发布实例状态变更事件，推送该服务下最新的实例信息给客户端
                             getPushService().serviceChanged(service);
                             // 发送一个实例心跳非健康的事件
                             ApplicationUtils.publishEvent(new InstanceHeartbeatTimeoutEvent(this, instance));
@@ -143,7 +143,7 @@ public class ClientBeatCheckTask implements Runnable {
                     // 跳过持久实例
                     continue;
                 }
-                // 若当前时间距离上次心跳时间超过 30s，说明该实例已经过期了，则将当前实例"清除"
+                // 判断心跳间隔，若当前时间距离上次心跳时间超过 30s(默认值)，说明该实例已经过期了，则将当前实例"清除"
                 if (System.currentTimeMillis() - instance.getLastBeat() > instance.getIpDeleteTimeout()) {
                     // delete instance
                     Loggers.SRV_LOG.info("[AUTO-DELETE-IP] service: {}, ip: {}", service.getName(),

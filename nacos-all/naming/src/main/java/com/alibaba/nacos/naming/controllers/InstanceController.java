@@ -469,7 +469,7 @@ public class InstanceController {
     @PutMapping("/beat")
     @Secured(parser = NamingResourceParser.class, action = ActionTypes.WRITE)
     public ObjectNode beat(HttpServletRequest request) throws Exception {
-        // 创建一个 JsonNode，该方法的返回值就是这个对象，以下操作就是对这个对象的初始化。
+        // 解析心跳请求参数，创建一个 JsonNode，该方法的返回值就是这个对象，以下操作就是对这个对象的初始化。
         ObjectNode result = JacksonUtils.createEmptyJsonNode();
         result.put(SwitchEntry.CLIENT_BEAT_INTERVAL, switchDomain.getClientBeatInterval());
         // 从请求中获取 beat，即客户端的心跳内容数据「beatInfo」
@@ -504,7 +504,7 @@ public class InstanceController {
         // 从本地注册表中获取当前发送心跳请求的客户端对应的实例数据
         Instance instance = serviceManager.getInstance(namespaceId, serviceName, clusterName, ip, port);
 
-        if (instance == null) { // 说明对应的实例还没有注册
+        if (instance == null) { // 如果获取失败，说明对应的实例还尚未注册，需从新注册一个实例
             if (clientBeat == null) {
                 result.put(CommonParams.CODE, NamingResponseCode.RESOURCE_NOT_FOUND);
                 return result;
@@ -532,7 +532,7 @@ public class InstanceController {
         // 再次从本地注册表中获取当前服务数据
         Service service = serviceManager.getService(namespaceId, serviceName);
 
-        if (service == null) {
+        if (service == null) { // 如果再次获取失败，则说明服务不存在，返回 404
             throw new NacosException(NacosException.SERVER_ERROR,
                     "service not found: " + serviceName + "@" + namespaceId);
         }
@@ -542,7 +542,8 @@ public class InstanceController {
             clientBeat.setPort(port);
             clientBeat.setCluster(clusterName);
         }
-        // 执行本次心跳
+
+        // 执行本次心跳，开始处理心跳结果
         service.processClientBeat(clientBeat);
 
         result.put(CommonParams.CODE, NamingResponseCode.OK);

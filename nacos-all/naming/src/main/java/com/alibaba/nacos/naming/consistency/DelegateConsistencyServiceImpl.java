@@ -45,6 +45,7 @@ public class DelegateConsistencyServiceImpl implements ConsistencyService {
     
     @Override
     public void put(String key, Record value) throws NacosException {
+        // 根据实例是否是临时实例，判断委托对象
         mapConsistencyService(key).put(key, value);
     }
     
@@ -80,7 +81,14 @@ public class DelegateConsistencyServiceImpl implements ConsistencyService {
     public boolean isAvailable() {
         return ephemeralConsistencyService.isAvailable() && persistentConsistencyService.isAvailable();
     }
-    
+
+    /**
+     * 集群一致性的委托方法，根据临时实例和持久实例的不同，委托不同的实现
+     * 临时实例：选择 ephemeralConsistencyService，即为 DistroConsistencyServiceImpl
+     * 持久实例：选择 PersistentConsistencyServiceDelegateImpl，即为 PersistentConsistencyServiceDelegateImpl
+     * @param key 临时实例或持久实例的标识
+     * @return
+     */
     private ConsistencyService mapConsistencyService(String key) {
         return KeyBuilder.matchEphemeralKey(key) ? ephemeralConsistencyService : persistentConsistencyService;
     }

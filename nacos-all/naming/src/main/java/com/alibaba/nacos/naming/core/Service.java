@@ -124,7 +124,8 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
 
     /**
      * 执行客户端发送过来的实例心跳。Process client beat.
-     *
+     * 将心跳信息封装到 ClientBeatProcessor(心跳检测器对象) 中，由 HealthCheckReactor 处理，运行 ClientBeatProcessor.run() 方法。
+     * HealthCheckReactor 就是对线程池的封装。
      * @param rsInfo metrics info of server
      */
     public void processClientBeat(final RsInfo rsInfo) {
@@ -132,6 +133,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         ClientBeatProcessor clientBeatProcessor = new ClientBeatProcessor();
         clientBeatProcessor.setService(this);
         clientBeatProcessor.setRsInfo(rsInfo);
+        // 将 ClientBeatProcessor 交给 HealthCheckReactor 处理，HealthCheckReactor 就是对线程池的封装。
         HealthCheckReactor.scheduleNow(clientBeatProcessor);
     }
 
@@ -254,7 +256,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
             ipMap.put(clusterName, new ArrayList<>());
         }
 
-        // 遍历该服务下最新的实例集合
+        // 遍历要更新的实例
         for (Instance instance : instances) {
             try {
                 if (instance == null) {
@@ -262,6 +264,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
                     continue;
                 }
 
+                // 判断实例是否包含 clusterName，若不包含，则使用默认的 cluster
                 if (StringUtils.isEmpty(instance.getClusterName())) {
                     instance.setClusterName(UtilsAndCommons.DEFAULT_CLUSTER_NAME);
                 }
@@ -283,7 +286,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
                     ipMap.put(instance.getClusterName(), clusterIPs);
                 }
 
-                // 把新增的是放到复制的实例集合中
+                // 把新增的实例放到复制的实例集合中
                 clusterIPs.add(instance);
             } catch (Exception e) {
                 Loggers.SRV_LOG.error("[NACOS-DOM] failed to process ip: " + instance, e);
@@ -294,7 +297,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         for (Map.Entry<String, List<Instance>> entry : ipMap.entrySet()) {
             // 获取这个集群下所有的最新实例。make every ip mine
             List<Instance> entryIPs = entry.getValue();
-            // 对该服务下每一个集群更新最新的实例集合
+            // 对该服务下每一个集群更新最新的实例集合，将实例集合更新到 clusterMap 中，即更新注册表
             clusterMap.get(entry.getKey()).updateIps(entryIPs, ephemeral);
         }
 
@@ -318,15 +321,18 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
      */
     public void init() {
         /**
-         * 开启定时清除过期的临时 Instance 实例数据任务
+         * 开启心跳检测任务，即开启定时清除过期的临时 Instance 实例数据任务
          * 往实例健康检查组件中添加了健康检查任务，延迟 5s 开始，每 5s 执行一次
          */
         HealthCheckReactor.scheduleCheck(clientBeatCheckTask);
         // 开启了当前服务所包含的所有 Cluster 的健康检测任务
         for (Map.Entry<String, Cluster> entry : clusterMap.entrySet()) {
             entry.getValue().setService(this);
-            // 开启当前遍历到的 Cluster 的健康检测任务。将当前 Cluster 包含的所有持久实例的心跳检测任务定时添加到任务队列 taskQueue 中
-            // 即将当前 Cluster 所包含的持久实例的心跳任务添加到任务队列 taskQueue 中
+            /**
+             * 完成集群初始化。会进入到 Cluster 的 init 方法中
+             * 开启当前遍历到的 Cluster 的健康检测任务。将当前 Cluster 包含的所有持久实例的心跳检测任务定时添加到任务队列 taskQueue 中
+             * 即将当前 Cluster 所包含的持久实例的心跳任务添加到任务队列 taskQueue 中
+             */
             entry.getValue().init();
         }
     }

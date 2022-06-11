@@ -213,11 +213,11 @@ public class NacosNamingService implements NamingService {
         NamingUtils.checkInstanceIsLegal(instance);
         // 生成格式：groupName@@serviceId，例如：my_group@@colin-nacos-consumer
         String groupedServiceName = NamingUtils.getGroupedName(serviceName, groupName);
-        // 判断当前实例是否为临时实例「默认为临时实例」
+        // 判断当前实例是否为临时实例「默认为临时实例」，临时实例基于心跳的方式做健康检测，永久实例则是由 nacos 主动探测实例的状态
         if (instance.isEphemeral()) {
             // 构建心跳信息数据
             BeatInfo beatInfo = beatReactor.buildBeatInfo(groupedServiceName, instance);
-            // 临时实例，向服务端发送心跳请求。「定时任务」
+            // 临时实例，向服务端发送心跳请求。「定时任务」。beatReactor 内部维护了一个线程池
             beatReactor.addBeatInfo(groupedServiceName, beatInfo);
         }
         // 向服务端发送注册请求，最终由 NacosProxy 的 registerService 方法处理

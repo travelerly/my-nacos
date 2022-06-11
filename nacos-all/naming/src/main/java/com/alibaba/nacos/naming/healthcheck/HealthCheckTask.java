@@ -80,7 +80,7 @@ public class HealthCheckTask implements Runnable {
         try {
             if (distroMapper.responsible(cluster.getService().getName()) && switchDomain
                     .isHealthCheckEnabled(cluster.getService().getName())) {
-                // 健康检测处理器执行健康检测任务。TcpSuperSenseProcessor.process()
+                // 健康检测处理器执行健康检测任务。默认由 TcpSuperSenseProcessor.process() 执行。
                 healthCheckProcessor.process(this);
                 if (Loggers.EVT_LOG.isDebugEnabled()) {
                     Loggers.EVT_LOG
