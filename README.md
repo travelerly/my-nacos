@@ -326,6 +326,11 @@ Nacos Discovery 应用在启动时会完成其必须的自动配置，会加载�
 
 **Nacos Client 启动时会创建一个 NacosWatch 类实例，NacosWatch 实现了 SmartLifecycle 接口，应用启动后，会回调其 start() 方法， 即定时从 Nacos Server 端获取当前服务的所有实例并更新到本地。**
 
+**Nacos 的服务发现的两种模式：**
+
+1. 主动拉取模式，消费者定期主动从 nacos 拉取服务列表并缓存起来，在服务调用时优先读取本地缓存中的服务列表
+2. 订阅模式，消费者订阅 nacos 中的服务列表，并基于 UDP 协议来接收服务变更通知，当 nacos 中的服务列表变更时，会发送 UDP 广播给所有订阅者。与 Eureka 相比，nacos 的订阅模式服务状态更新更及时，消费者更容易及时发现服务列表的变化，易剔除故障服务。
+
 Nacos 的服务发现功能有两种实现方式，一种是客户端主动请求服务端拉取注册的实例，另一种是客户端对服务端进行订阅之后，当服务端注册的实例发生变更之后，服务端会主动推送注册实例给客户端。第一种主动拉取的模式比较简单其实就是客户端发起拉取请求之后然后服务端根据请求的内容去双层 map 结构中找到对应的注册实例返回给客户端，而第二种方式则比较复杂，需要服务端去进行数据的推送。
 
 
@@ -369,8 +374,6 @@ NotifyCenter.registerSubscriber(notifier);
 NotifyCenter.publishEvent(new InstancesChangeEvent(serviceInfo.getName(), serviceInfo.getGroupName(),
         serviceInfo.getClusters(), serviceInfo.getHosts()));
 ```
-
-
 
 监听器是在 subscribe() 方法中，把指定监听的服务名称和集群名称和对应的监听器放到 listenerMap 中，然后当事件订阅者遍历这些监听器的时候，就会根据发布的事件对象中的服务名称从 listenerMap 中获取到对应的监听器并执行 onEvent() 方法，通过透传的事件对象，用户能够在 onEvent 这个回调方法中获取到指定服务和集群下最新的实例信息了。
 

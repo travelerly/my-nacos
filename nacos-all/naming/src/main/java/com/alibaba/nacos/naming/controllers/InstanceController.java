@@ -372,7 +372,7 @@ public class InstanceController {
     }
 
     /**
-     * 服务端处理客户端的订阅拉取请求
+     * 服务端处理客户端的订阅拉取服务的请求
      * Get all instance of input service.
      *
      * @param request http request
@@ -403,7 +403,7 @@ public class InstanceController {
 
         boolean healthyOnly = Boolean.parseBoolean(WebUtils.optional(request, "healthyOnly", "false"));
 
-        // 对订阅请求进行详细处理
+        // 对订阅请求进行详细处理，即获取服务列表
         return doSrvIpxt(namespaceId, serviceName, agent, clusters, clientIP, udpPort, env, isCheck, app, tenant,
                 healthyOnly);
     }
@@ -665,7 +665,7 @@ public class InstanceController {
     }
 
     /**
-     * Nacos Server 对订阅请求进行详细处理
+     * Nacos Server 对订阅请求进行详细处理，即获取服务列表
      * Get service full information with instances.
      *
      * @param namespaceId namespace id
@@ -690,7 +690,7 @@ public class InstanceController {
         // 创建一个 JsonNode，该方法的返回值就是这个对象，以下操作就是对这个对象的初始化。
         ObjectNode result = JacksonUtils.createEmptyJsonNode();
 
-        // 先从注册表中获取当前服务（根据名称空间 id 和服务名称获取）
+        // 先从注册表中获取当前服务列表信息（根据名称空间 id 和服务名称获取）
         Service service = serviceManager.getService(namespaceId, serviceName);
         long cacheMillis = switchDomain.getDefaultCacheMillis();
 
@@ -703,9 +703,10 @@ public class InstanceController {
             if (udpPort > 0 && pushService.canEnablePush(agent)) {
                 /**
                  * 当客户端订阅了服务之后，就会作为可推送的目标客户端添加给推送服务组件
-                 * 创建当前发起请阅请求的 Nacos Client 的 UDP Client，即PushClient。
+                 * 创建当前发起请阅请求的 Nacos Client 的 UDP Client，即 PushClient。
                  * 并判断 PushClient 是否存在与 clientMap 中，若存在，则更新其最后引用时间戳，若不存在，则将其存入缓存 clientMap 中。
                  * 注意，在 Nacos 的 UDP 通信中，Nacos Server 充当的是 UDP Client，Nacos Client 充当的是 UDP Server。
+                 * 其实是把消费者的 UDP 端口、IP 等信息封装为一个 PushClient 对象，存储 PushService 中，方便以后服务变更后推送消息。
                  */
                 pushService
                         .addClient(namespaceId, serviceName, clusters, agent, new InetSocketAddress(clientIP, udpPort),

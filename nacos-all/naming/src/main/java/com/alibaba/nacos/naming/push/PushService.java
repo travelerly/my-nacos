@@ -55,7 +55,7 @@ import java.util.zip.GZIPOutputStream;
 
 /**
  * Push service.
- *
+ * PushService 实现了 ApplicationListener 接口，监听 ServiceChangeEvent 服务变更事件
  * @author nacos
  */
 @Component
@@ -135,7 +135,7 @@ public class PushService implements ApplicationContextAware, ApplicationListener
         String serviceName = service.getName();
         String namespaceId = service.getNamespaceId();
 
-        // 启动一个定时操作，异步执行服务变更推送操作
+        // 启动一个定时操作，异步执行服务变更推送操作，即异步发送 UDP 广播
         Future future = GlobalExecutor.scheduleUdpSender(() -> {
             try {
                 Loggers.PUSH.info(serviceName + " is changed, add it to push queue.");

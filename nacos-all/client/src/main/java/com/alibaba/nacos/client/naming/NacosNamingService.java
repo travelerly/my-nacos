@@ -316,14 +316,19 @@ public class NacosNamingService implements NamingService {
             boolean subscribe) throws NacosException {
 
         ServiceInfo serviceInfo;
-        if (subscribe) { // 该客户端订阅指定的服务
+        // 判断是否需要订阅服务信息（默认为 true）
+        if (subscribe) {
+            // 订阅服务信息
             serviceInfo = hostReactor.getServiceInfo(NamingUtils.getGroupedName(serviceName, groupName),
                     StringUtils.join(clusters, ","));
-        } else { // 该客户端不订阅服务，每次都会请求服务器获取最新的服务实例
+        } else {
+            // 该客户端不订阅服务，每次都会请求服务器获取最新的服务实例，即直接取 nacos 拉取服务实例
             serviceInfo = hostReactor
                     .getServiceInfoDirectlyFromServer(NamingUtils.getGroupedName(serviceName, groupName),
                             StringUtils.join(clusters, ","));
         }
+
+        // 从服务信息中获取实例列表并返回
         List<Instance> list;
         if (serviceInfo == null || CollectionUtils.isEmpty(list = serviceInfo.getHosts())) {
             return new ArrayList<Instance>();

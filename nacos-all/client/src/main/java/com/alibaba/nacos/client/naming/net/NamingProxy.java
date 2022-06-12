@@ -397,6 +397,7 @@ public class NamingProxy implements Closeable {
     public String queryList(String serviceName, String clusters, int udpPort, boolean healthyOnly)
             throws NacosException {
 
+        // 准备请求参数
         final Map<String, String> params = new HashMap<String, String>(8);
         params.put(CommonParams.NAMESPACE_ID, namespaceId);
         params.put(CommonParams.SERVICE_NAME, serviceName);
@@ -405,6 +406,7 @@ public class NamingProxy implements Closeable {
         params.put("clientIP", NetUtils.localIP());
         params.put("healthyOnly", String.valueOf(healthyOnly));
 
+        // 发起请求，地址：/v1/ns/instance/list
         return reqApi(UtilAndComs.nacosUrlBase + "/instance/list", params, HttpMethod.GET);
     }
 

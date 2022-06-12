@@ -51,11 +51,16 @@ public class PushReceiver implements Runnable, Closeable {
 
     private volatile boolean closed = false;
 
+    /**
+     * 这个类会以 UDP 的方式接收来自 Nacos 服务端推送的服务变更数据。
+     * @param hostReactor
+     */
     public PushReceiver(HostReactor hostReactor) {
         try {
             this.hostReactor = hostReactor;
+            // 创建 UDP 客户端
             this.udpSocket = new DatagramSocket();
-            // 创建一个线程池
+            // 准备一个线程池
             this.executorService = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
                 @Override
                 public Thread newThread(Runnable r) {
@@ -65,7 +70,7 @@ public class PushReceiver implements Runnable, Closeable {
                     return thread;
                 }
             });
-            // 异步执行接收 nacos 服务端推送数据的任务，即执行 PushReceiver.run()
+            // 开启线程任务，准备异步执行接收 nacos 服务端推送的变更数据的任务，即执行 PushReceiver.run()
             this.executorService.execute(this);
         } catch (Exception e) {
             NAMING_LOGGER.error("[NA] init udp socket failed", e);
@@ -78,10 +83,10 @@ public class PushReceiver implements Runnable, Closeable {
         // 开启一个无限循环
         while (!closed) {
             try {
-
                 // 创建一个 64k 大小的缓冲区。byte[] is initialized with 0 full filled by default
                 byte[] buffer = new byte[UDP_MSS];
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+
                 // 接收 nacos 服务端推送过来的数据。接收来自 Nacos Server 的 UDP 通信推送的数据，并封装到 packet 数据包中
                 udpSocket.receive(packet);
 
@@ -89,7 +94,7 @@ public class PushReceiver implements Runnable, Closeable {
                 String json = new String(IoUtils.tryDecompress(packet.getData()), UTF_8).trim();
                 NAMING_LOGGER.info("received push data: " + json + " from " + packet.getAddress().toString());
 
-                // 将 JSON 串封装为 PushPacket
+                // 将 JSON 反序列化为 PushPacket 对象
                 PushPacket pushPacket = JacksonUtils.toObj(json, PushPacket.class);
                 String ack;
                 // 根据不同的数据类型，生成对应的 ack
