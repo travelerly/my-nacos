@@ -37,6 +37,28 @@ consistency 模块缺失 entity 包中的代码，需要下载插件 protoc 手�
 
 <img src="doc/nacos架构.jpeg" alt="nacos 架构" style="zoom:50%;" />
 
+Nacos 内部提供了 Config Service 和 Naming Service，底层由 Nacos Core 提供支持，外层提供 OpenAPI 使用，并提供了 User Console、Admin Console 方便用户使用。
+
+从架构图中可以看出，Nacos 提供了两种服务，一种是用于服务注册、服务发现的 Naming Service，一种是用于配置中心、动态配置的 Config Service，而他们底层均由 core 模块来支持。
+
+- Provider APP：服务提供者
+- Consumer APP：服务消费者
+- Naming Server：通过 VIP(Vritual IP) 或者 DNS 的方式实现 Nacos 高可用集群的服务路由
+- Nacos Server：Nacos 服务提供者，包含 OpenAPI 访问入口，Config Service 是 Nacos 的配置服务，Naming Service 是 Naocs 的名字服务模块，Consistency Protocol 是一致性协议，用来实现 Nacos 集群节点的数据同步，使用功能的是 Raft 算法
+- Nacos Console：控制台
+
+从 OpenAPI 可以了解到，Nacos 通过提供一系列的 http 接口来提供 Naming 服务和 Config 服务：
+
+服务注册 URI：`/nacos/v1/ns/instance` POST请求
+
+服务取消注册 URI：`/nacos/v1/ns/instance` DELETE 请求
+
+心跳检测 URI：`/nacos/v1/ns/instance/beat` PUT 请求
+
+……
+
+都是遵循 REST API 的风格，Nacos 通过 HTTP 这样无状态的协议来进行 client-server 端的通信。
+
 ---
 
 ### Nacos 数据模型
@@ -279,7 +301,7 @@ public void registerInstance(String serviceName, String groupName, Instance inst
   
 - 如果 Nacos 没有指定连接的 server 地址，Nacos 会首次按获取到其配置的所有 server 地址，然后再随机选择一个 server 进行连接，如果连接失败，其会以轮询方式再尝试连接下一台，直到将所有 server 都进行了尝试，如果最终没有任何一台能够连接成功，则会抛出异常；
   
-- 底层使用 Nacos 自定义的一个 HttpClientRequest「JdkHttpClientRequest」发起请求。JdkHttpClientRequest 实现了对 JDK 中的 HttpURLConnection 的封装。
+- Nacos 底层是基于 HTTP 协议完成请求的，是使用 Nacos 自定义的一个 HttpClientRequest「JdkHttpClientRequest」发起请求。JdkHttpClientRequest 实现了对 JDK 中的 HttpURLConnection 的封装。
 
 <br>
 

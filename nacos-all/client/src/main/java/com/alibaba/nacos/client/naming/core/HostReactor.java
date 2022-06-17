@@ -147,6 +147,7 @@ public class HostReactor implements Closeable {
     }
 
     /**
+     * 通过客户端对象去订阅一个服务，当这个服务发生变更时，就会回调 EventListener 监听器的 onEvent() 方法。
      * subscribe instancesChangeEvent.
      *
      * @param serviceName   combineServiceName, such as 'xxx@@xxx'
@@ -156,7 +157,11 @@ public class HostReactor implements Closeable {
     public void subscribe(String serviceName, String clusters, EventListener eventListener) {
         // 注册监听器
         notifier.registerListener(serviceName, clusters, eventListener);
-        // 定时从 Nacos Server 端获取当前服务的所有实例并更新到本地
+
+        /**
+         * 定时从 Nacos Server 端获取当前服务的所有实例并更新到本地
+         * 获取目标服务(列表)，订阅服务信息
+         */
         getServiceInfo(serviceName, clusters);
     }
 
@@ -307,12 +312,12 @@ public class HostReactor implements Closeable {
 
             // 只要发生了变更，就将这个发生了变更的 ServiceInfo 记录到一个缓存队列中。
             if (newHosts.size() > 0 || remvHosts.size() > 0 || modHosts.size() > 0) {
-                /**
-                 * 通过 InstancesChangeEvent 事件对应的事件发布者去发布一个 InstanceChangeEvent 事件，即发布一个实例变更的事件
-                 * 发布完之后，该事件发布者对应的事件订阅者就能够进行监听回调。
-                 */
-                NotifyCenter.publishEvent(new InstancesChangeEvent(serviceInfo.getName(), serviceInfo.getGroupName(),
-                        serviceInfo.getClusters(), serviceInfo.getHosts()));
+            /**
+             * 通过 InstancesChangeEvent 事件对应的事件发布者去发布一个 InstanceChangeEvent 事件，即发布一个实例变更的事件
+             * 发布完之后，该事件发布者对应的事件订阅者就能够进行监听回调。
+             */
+            NotifyCenter.publishEvent(new InstancesChangeEvent(serviceInfo.getName(), serviceInfo.getGroupName(),
+                    serviceInfo.getClusters(), serviceInfo.getHosts()));
                 DiskCache.write(serviceInfo, cacheDir);
             }
 
@@ -446,6 +451,7 @@ public class HostReactor implements Closeable {
 
     private void updateServiceNow(String serviceName, String clusters) {
         try {
+            // 从服务端获取到指定服务下的所有实例，并且当前客户端还会被服务端所绑定作为推送的目标客户端。
             updateService(serviceName, clusters);
         } catch (NacosException e) {
             NAMING_LOGGER.error("[NA] failed to update serviceName: " + serviceName, e);
@@ -489,7 +495,7 @@ public class HostReactor implements Closeable {
         ServiceInfo oldService = getServiceInfo0(serviceName, clusters);
         try {
             /**
-             * 基于 ServerProxy 发起远程调用，查询服务列表
+             * 基于 ServerProxy 发起远程调用，拉取对应服务和集群下所有实例
              * 向 server 提交一个"GET"请求，获取指定服务所有实例，同时当前客户端还会订阅该指定的服务，返回结果是 JSON 格式
              */
             String result = serverProxy.queryList(serviceName, clusters, pushReceiver.getUdpPort(), false);

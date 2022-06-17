@@ -100,7 +100,7 @@ public class DefaultPublisher extends Thread implements EventPublisher {
      */
     void openEventHandler() {
         try {
-            
+
             // This variable is defined to resolve the problem which message overstock in the queue.
             int waitTimes = 60;
             // To ensure that messages are not lost, enable EventHandler when
@@ -113,7 +113,7 @@ public class DefaultPublisher extends Thread implements EventPublisher {
                 ThreadUtils.sleep(1000L);
                 waitTimes--;
             }
-            
+
             for (; ; ) {
                 if (shutdown) {
                     break;
@@ -182,7 +182,7 @@ public class DefaultPublisher extends Thread implements EventPublisher {
      */
     void receiveEvent(Event event) {
         final long currentEventSequence = event.sequence();
-        
+
         // 遍历所有事件订阅者去处理事件。Notification single event listener
         for (Subscriber subscriber : subscribers) {
             // Whether to ignore expiration events
@@ -191,31 +191,31 @@ public class DefaultPublisher extends Thread implements EventPublisher {
                         event.getClass());
                 continue;
             }
-            
+
             // Because unifying smartSubscriber and subscriber, so here need to think of compatibility.
             // Remove original judge part of codes.
-            // 通知指定的订阅者出来事件。
+            // 通知指定的订阅者处理事件。
             notifySubscriber(subscriber, event);
         }
     }
 
     /**
-     * 通知指定的订阅者出来事件。
+     * 通知指定的订阅者
      * @param subscriber 订阅者。{@link Subscriber}
      * @param event      通知事件。{@link Event}
      */
     @Override
     public void notifySubscriber(final Subscriber subscriber, final Event event) {
-        
+
         LOGGER.debug("[NotifyCenter] the {} will received by {}", event, subscriber);
-        
+
         final Runnable job = new Runnable() {
             @Override
             public void run() {
                 subscriber.onEvent(event);
             }
         };
-        
+
         final Executor executor = subscriber.executor();
 
         // 指定了线程池，放到线程池中去执行订阅回调，即执行 InstancesChangeNotifier 的 onEvent() 方法

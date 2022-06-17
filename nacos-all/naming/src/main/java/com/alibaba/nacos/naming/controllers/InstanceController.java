@@ -116,7 +116,7 @@ public class InstanceController {
     };
 
     /**
-     * 处理客户端注册请求，注册新实例。Register new instance.
+     * 服务端处理客户端注册请求，注册新实例。Register new instance.
      *
      * @param request http request
      * @return 'ok' if success，注册成功返回 ok
@@ -372,7 +372,7 @@ public class InstanceController {
     }
 
     /**
-     * 服务端处理客户端的订阅拉取服务的请求
+     * Nacos 服务端服务发现接口
      * Get all instance of input service.
      *
      * @param request http request
@@ -392,7 +392,11 @@ public class InstanceController {
         String agent = WebUtils.getUserAgent(request);
         String clusters = WebUtils.optional(request, "clusters", StringUtils.EMPTY);
         String clientIP = WebUtils.optional(request, "clientIP", StringUtils.EMPTY);
-        // 获取到客户端的端口号，用于 UDP 通信
+        /**
+         * 获取到客户端的端口号，用于 UDP 通信
+         * 如果 udpPort > 0，则表示客户端订阅了服务，需要进行推送。即把请求的客户端添加为可推送的目标客户端。
+         * 如果 udpPort = 0，则表示客户端没有订阅服务，是一个普通的客户端，不需要进行推送。
+         */
         int udpPort = Integer.parseInt(WebUtils.optional(request, "udpPort", "0"));
         String env = WebUtils.optional(request, "env", StringUtils.EMPTY);
         boolean isCheck = Boolean.parseBoolean(WebUtils.optional(request, "isCheck", "false"));

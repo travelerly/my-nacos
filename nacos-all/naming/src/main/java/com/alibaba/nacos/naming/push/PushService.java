@@ -224,6 +224,11 @@ public class PushService implements ApplicationContextAware, ApplicationListener
 
     /**
      * 添加一个目标推送客户端
+     * 当客户端订阅了服务之后，就会作为可推送的目标客户端添加给推送服务组件
+     * 创建当前发起请阅请求的 Nacos Client 的 UDP Client，即 PushClient。
+     * 并判断 PushClient 是否存在与 clientMap 中，若存在，则更新其最后引用时间戳，若不存在，则将其存入缓存 clientMap 中。
+     * 注意，在 Nacos 的 UDP 通信中，Nacos Server 充当的是 UDP Client，Nacos Client 充当的是 UDP Server。
+     * 其实是把消费者的 UDP 端口、IP 等信息封装为一个 PushClient 对象，存储 PushService 中，方便以后服务变更后推送消息。
      * Add push target client.
      *
      * @param namespaceId namespace id

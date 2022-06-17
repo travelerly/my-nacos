@@ -563,6 +563,7 @@ public class ServiceManager implements RecordListener<Service> {
      */
     public void registerInstance(String namespaceId, String serviceName, Instance instance) throws NacosException {
         /**
+         * 1.初始化服务对象
          * 如果注册表中没有当前将要注册的服务，说明是第一次注册，则创建这个服务对应的 Service ，并添加进注册表中，
          * 1.此时注册表仅仅保存了该服务的 namespaceId 和 serviceName 等信息，与该服务的具体主机 Instance 实例数据无关。
          * 2.同时开启定时清除过期的服务实例数据任务，开启当前服务所包含的所有 Cluster 的健康检测任务
@@ -570,6 +571,7 @@ public class ServiceManager implements RecordListener<Service> {
          */
         createEmptyService(namespaceId, serviceName, instance.isEphemeral());
         /**
+         * 2.获取服务对象
          * 从注册表中获取当前准备注册的服务对应的 Service。
          * 若当前要注册的实例是这个服务的第一个实例，则在上一步已经完成的注册，但只注册了该服务的 namespaceId 和 serviceName，
          * 并没有具体主机的 Instance 实例数据
@@ -583,6 +585,7 @@ public class ServiceManager implements RecordListener<Service> {
         }
 
         /**
+         * 3.向服务对象中添加要注册的新实例对象
          * 向刚创建好的 service 对象中添加需要注册的服务实例。
          */
         addInstance(namespaceId, serviceName, instance.isEphemeral(), instance);
@@ -712,8 +715,6 @@ public class ServiceManager implements RecordListener<Service> {
     /**
      * 向服务(service)对象中添加服务实例(instance)。Add instance to service.
      *
-     *
-     *
      * @param namespaceId 名称空间 id。namespace
      * @param serviceName 服务名称。service name
      * @param ephemeral   是否是临时实例标志。whether instance is ephemeral
@@ -736,7 +737,11 @@ public class ServiceManager implements RecordListener<Service> {
          */
         Service service = getService(namespaceId, serviceName);
 
-        // 对服务对象加锁，使得同一服务下的实例串行注册
+        /**
+         * 对服务对象加锁，使得同一服务下的实例串行注册
+         * Nacos 在处理注册请求时，对 Service 加锁，而不同的 Service 本省就不存在并发写的问题，而加了锁以后，相同的 Service 之间就存在互斥，
+         * 在更新实例列表时，是基于异步的线程池来完成的，而线程池内线程的数量为 1.
+         */
         synchronized (service) {
             /**
              * 获取到新增实例之后，该服务下最新的实例集合，即获取要更新的实例列表
@@ -747,7 +752,7 @@ public class ServiceManager implements RecordListener<Service> {
              */
             List<Instance> instanceList = addIpAddresses(service, ephemeral, ips);
 
-            // 创建一个 Instances 对象，把原来的实例+要注册的实例存放到这个对象中，后面更新注册表时使用。
+            // 创建一个 Instances 对象，把原来的实例+要注册的实例存放到这个服务对象中，后面更新注册表时使用。
             Instances instances = new Instances();
             instances.setInstanceList(instanceList);
 
