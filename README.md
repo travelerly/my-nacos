@@ -39,7 +39,7 @@ consistency 模块缺失 entity 包中的代码，需要下载插件 protoc 手�
 
 Nacos 内部提供了 Config Service 和 Naming Service，底层由 Nacos Core 提供支持，外层提供 OpenAPI 使用，并提供了 User Console、Admin Console 方便用户使用。
 
-从架构图中可以看出，Nacos 提供了两种服务，一种是用于服务注册、服务发现的 Naming Service，一种是用于配置中心、动态配置的 Config Service，而他们底层均由 core 模块来支持。
+从架构图中可以看出，Nacos 提供了两种服务，一种是用于服务注册、服务发现的 Naming Service，一种是用于配置中心、动态配置的 Config Service，而他们底层均由 core 模块来提供支持。
 
 - Provider APP：服务提供者
 - Consumer APP：服务消费者
@@ -751,6 +751,12 @@ Nacos Server 中的 ServiceManager 管理着当前 Server 中的所有服务数�
 1. 启动了一个**定时任务**：当前 Nacos Server 每隔 60s 会向其它 Nacos Server 发送一次本机注册表
 2. 从其它 Nacos Server 端获取注册表中的所有 Instance 的最新状态并更新到本地注册表
 3. 启动了一个**定时任务**，每隔 30s 清理一次注册表中空的 Service。（空 Service 即为没有任何 Instance 的 Service）。但这个清除并不是直接的暴力清除，即并不是在执行定时任务时，一经发现空的 Service 就立即将其清除，而是仅使用一个标记该 Service 为空的计数器加一，当计数器的值超出了设定好的清除阈值（默认为 3）时，才将该 Service 清除。另外这个清除工作并不是直接在本地注册表中清除，而是通过一致性操作来完成的。这样做得好处是不仅清除了本地注册表中的数据，同时清除了其它 Nacos Server 注册表中的数据。
+
+<br>
+
+### Nacos 服务注册与发现流程图总结
+
+<img src="doc/Nacos服务发现原理流程.jpg" alt="nacos-config系统架构" style="zoom:33%;" />
 
 ---
 

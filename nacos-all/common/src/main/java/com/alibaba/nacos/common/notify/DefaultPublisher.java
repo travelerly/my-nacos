@@ -96,7 +96,7 @@ public class DefaultPublisher extends Thread implements EventPublisher {
     }
 
     /**
-     * 处理事件，子线程执行
+     * 子线程处理事件
      */
     void openEventHandler() {
         try {
