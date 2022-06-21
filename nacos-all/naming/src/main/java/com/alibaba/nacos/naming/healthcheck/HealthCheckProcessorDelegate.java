@@ -53,7 +53,7 @@ public class HealthCheckProcessorDelegate implements HealthCheckProcessor {
         if (processor == null) {
             processor = healthCheckProcessorMap.get(NoneHealthCheckProcessor.TYPE);
         }
-        // 处理任务
+        // 处理任务，默认由 TcpSuperSenseProcessor.process() 执行。
         processor.process(task);
     }
 

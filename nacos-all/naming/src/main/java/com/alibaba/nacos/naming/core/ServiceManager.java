@@ -962,10 +962,10 @@ public class ServiceManager implements RecordListener<Service> {
                 // ADD。针对添加-注册请求，从最新的实例数据列表中获取当前要注册的 Instance 数据
                 Instance oldInstance = instanceMap.get(instance.getDatumKey());
                 if (oldInstance != null) {
-                    // 说明遍历到的这个实例已经存在于本地注册表中，则直接使用旧实例的 id
+                    // 说明遍历到的这个实例的 datumKey 已经存在于”最新实例“集合中，则直接使用旧实例的 id
                     instance.setInstanceId(oldInstance.getInstanceId());
                 } else {
-                    // 说明遍历到的这个实例不存在于本地注册表中，属于新增实例，则根据指定规则生成一个新的实例 id
+                    // 说明遍历到的这个实例不存在于”最新实例“集合中，属于新增实例，则根据指定规则生成一个新的实例 id
                     instance.setInstanceId(instance.generateInstanceId(currentInstanceIds));
                 }
 
@@ -1080,9 +1080,9 @@ public class ServiceManager implements RecordListener<Service> {
 
         /**
          * 设置临时实例变动的监听器
-         * 给针对当前服务（Service）的持久实例、临时实例，在 Nacos Server 集群中添加监听
-         * 给指定的服务设置监听器，监听器的作用就是当这个服务发生了实例上的变更，比如新增或删除，就会触发回调对应的监听方法
-         * 可以看到 Service 对象自身实现了监听器接口，所以 Service 本身也是一个监听器，这里直接把 Service 传进去，
+         * 因为服务 Service 对象自身实现了监听接口，所以 Service 本身就是一个监听器，
+         * 利用一致性服务，把 Service 作为监听器添加进 Nacos Server 集群中。
+         * 监听器的作用就是当这个服务发生了数据变更，例如新增实例或删除实例，就会触发监听器回调对应的监听方法。
          * 当该服务实例发生变动之后，会执行 Service 中实现的监听回调方法
          */
         consistencyService

@@ -80,7 +80,13 @@ public class HealthCheckTask implements Runnable {
         try {
             if (distroMapper.responsible(cluster.getService().getName()) && switchDomain
                     .isHealthCheckEnabled(cluster.getService().getName())) {
-                // 健康检测处理器执行健康检测任务。默认由 TcpSuperSenseProcessor.process() 执行。
+                /**
+                 * 健康检测处理器执行健康检测任务。
+                 * Nacos 健康检查的探测机制有三种：
+                 * 1.HTTP
+                 * 2.TCP
+                 * 3.MySQL
+                 */
                 healthCheckProcessor.process(this);
                 if (Loggers.EVT_LOG.isDebugEnabled()) {
                     Loggers.EVT_LOG

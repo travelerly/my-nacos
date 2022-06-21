@@ -45,12 +45,12 @@ public class Instance implements Serializable {
     private String instanceId;
 
     /**
-     * instance ip.
+     * 该实例的 IP 地址，在 Nacos 2.0 版本后支持设置为域名。instance ip.
      */
     private String ip;
 
     /**
-     * instance port.
+     * 该实例的端口。instance port.
      */
     private int port;
 
@@ -60,6 +60,7 @@ public class Instance implements Serializable {
     private double weight = 1.0D;
 
     /**
+     * 用于表示该实例是否为健康状态，会在 Nacos 中通过健康检查的手段进行维护。
      * 仅标识临时实例的健康状态，"true"：健康；"false"：不健康。instance health status.
      */
     private boolean healthy = true;
@@ -77,7 +78,7 @@ public class Instance implements Serializable {
     private boolean ephemeral = true;
 
     /**
-     * cluster information of instance.
+     * 用于标识该实例归属于那个逻辑集群。cluster information of instance.
      */
     private String clusterName;
 

@@ -80,8 +80,16 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
 
     private Boolean resetWeight = false;
 
+    /**
+     * 上线状态，标记该实例是否接受流量，优先级大于权重和健康状态，用于运维人员在不变动实例本身的情况下，快速地将某个实例从服务中移除
+     */
     private Boolean enabled = true;
 
+    /**
+     * 实例选择器，用于在获取服务下的实例列表时，过滤和筛选实例。
+     * 该选择器也被称为路由器，目前 Nacos 支持通过将实例的部分信息存储在外部元数据管理 CMDB 中，
+     * 并在发现服务时使用 CMDB 中存储的元数据标签来进行筛选的能力。
+     */
     private Selector selector = new NoneSelector();
 
     private String namespaceId;

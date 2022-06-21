@@ -710,7 +710,7 @@ public class InstanceController {
                  * 创建当前发起请阅请求的 Nacos Client 的 UDP Client，即 PushClient。
                  * 并判断 PushClient 是否存在与 clientMap 中，若存在，则更新其最后引用时间戳，若不存在，则将其存入缓存 clientMap 中。
                  * 注意，在 Nacos 的 UDP 通信中，Nacos Server 充当的是 UDP Client，Nacos Client 充当的是 UDP Server。
-                 * 其实是把消费者的 UDP 端口、IP 等信息封装为一个 PushClient 对象，存储 PushService 中，方便以后服务变更后推送消息。
+                 * 其实是把客户端的 UDP 端口、IP 等信息封装为一个 PushClient 对象，存储 PushService 中，方便以后服务变更后推送消息。
                  */
                 pushService
                         .addClient(namespaceId, serviceName, clusters, agent, new InetSocketAddress(clientIP, udpPort),
@@ -755,31 +755,31 @@ public class InstanceController {
         }
 
         // 若得到的 Instance 列表为空，则直接返回。即该服务下没有实例，或者过滤后没有实例，简单封装下对象并返回给客户端。
-        if (CollectionUtils.isEmpty(srvedIPs)) {
+            if (CollectionUtils.isEmpty(srvedIPs)) {
 
-            if (Loggers.SRV_LOG.isDebugEnabled()) {
-                Loggers.SRV_LOG.debug("no instance to serve for service: {}", serviceName);
+                if (Loggers.SRV_LOG.isDebugEnabled()) {
+                    Loggers.SRV_LOG.debug("no instance to serve for service: {}", serviceName);
+                }
+
+                if (clientInfo.type == ClientInfo.ClientType.JAVA
+                        && clientInfo.version.compareTo(VersionUtil.parseVersion("1.0.0")) >= 0) {
+                    result.put("dom", serviceName);
+                } else {
+                    result.put("dom", NamingUtils.getServiceName(serviceName));
+                }
+
+                result.put("name", serviceName);
+                result.put("cacheMillis", cacheMillis);
+                result.put("lastRefTime", System.currentTimeMillis());
+                result.put("checksum", service.getChecksum());
+                result.put("useSpecifiedURL", false);
+                result.put("clusters", clusters);
+                result.put("env", env);
+                // 此处 hosts 为空
+                result.set("hosts", JacksonUtils.createEmptyArrayNode());
+                result.set("metadata", JacksonUtils.transferToJsonNode(service.getMetadata()));
+                return result;
             }
-
-            if (clientInfo.type == ClientInfo.ClientType.JAVA
-                    && clientInfo.version.compareTo(VersionUtil.parseVersion("1.0.0")) >= 0) {
-                result.put("dom", serviceName);
-            } else {
-                result.put("dom", NamingUtils.getServiceName(serviceName));
-            }
-
-            result.put("name", serviceName);
-            result.put("cacheMillis", cacheMillis);
-            result.put("lastRefTime", System.currentTimeMillis());
-            result.put("checksum", service.getChecksum());
-            result.put("useSpecifiedURL", false);
-            result.put("clusters", clusters);
-            result.put("env", env);
-            // 此处 hosts 为空
-            result.set("hosts", JacksonUtils.createEmptyArrayNode());
-            result.set("metadata", JacksonUtils.transferToJsonNode(service.getMetadata()));
-            return result;
-        }
 
         // 至此，说明当前服务的"可用的" Instance 列表不为空，即获取到该服务下的实例数据了。
 

@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
+ * 健康检查类型：使用那种类型的健康检查方式，TCP、HTTP、MYSQL 或者 NONE(关闭健康检查)。
  * Health check type.
  *
  * @author nkorange

@@ -75,10 +75,10 @@ public class ClientBeatCheckTask implements Runnable {
 
 
     /**
-     * 服务心跳检测任务，即服务端对实例进行过期下线检查，清除过期的临时 Instance 实例数据
+     * 服务端开启心跳检测任务，即服务端对实例进行过期下线检查，清除过期的临时 Instance 实例数据
      * 先判断当前服务是否由当前节点负责
-     * 然后再判断 nacos 服务是否开启了健康检查，默认时开启的，如果没有开启，则直接返回，
-     * 接着就获取这个服务中所有的实例对象，遍历这些实例对象，对每一个实例对象中的最近一次心跳续约事件与当前时间进行比较，默认相差超过 15s，
+     * 然后再判断 nacos 服务是否开启了健康检查，默认是开启的，如果没有开启，则直接结束，
+     * 接着就获取这个服务中所有的实例对象，遍历这些实例对象，对每一个实例对象中的最近一次心跳续约时间与当前时间进行比较，默认相差超过 15s，
      * 就把这个实例的健康状态变更为非健康状态，这里仅仅修改健康状态为"非健康"，并没有把实例进行下线，
      * 然后接着会再一次遍历读物的所有实例，在这一次遍历中，如果当前时间与该实例最近心跳续约的时间差大于 30s，就对该实例进行真正的下线操作，
      * 所谓下线操作，就是将这个实例从注册表中删除。
@@ -124,7 +124,7 @@ public class ClientBeatCheckTask implements Runnable {
                                             instance.getInstanceHeartBeatTimeOut(), instance.getLastBeat());
                             // 当前服务发生了状态变更，发布实例状态变更事件，推送该服务下最新的实例信息给客户端
                             getPushService().serviceChanged(service);
-                            // 发送一个实例心跳非健康的事件
+                            // 发送心跳非健康的事件
                             ApplicationUtils.publishEvent(new InstanceHeartbeatTimeoutEvent(this, instance));
                         }
                     }
