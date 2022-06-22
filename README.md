@@ -41,12 +41,12 @@ Nacos 内部提供了 Config Service 和 Naming Service，底层由 Nacos Core �
 
 从架构图中可以看出，Nacos 提供了两种服务，一种是用于服务注册、服务发现的 Naming Service，一种是用于配置中心、动态配置的 Config Service，而他们底层均由 core 模块来提供支持。
 
-- OpenAPI：暴露标准 Rest 风格 HTTP 接口，简单易用，方便多语言集成
 - Provider APP：服务提供者
 - Consumer APP：服务消费者
-- Naming Service：Nacos 服务注册，服务发现模块
+- OpenAPI：暴露标准 Rest 风格 HTTP 接口，简单易用，方便多语言集成
 - Config Service：Nacos 的配置服务
-- Consistency Protocol：一致性协议，用来实现 Nacos 集群节点的数据同步，使用功能的是 Raft 或 Distro 算法
+- Naming Service：Nacos 服务注册，服务发现模块
+- Consistency Protocol：一致性服务，用来实现 Nacos 集群节点的数据同步，使用的是 Raft 或 Distro 算法
 - Nacos Console：易用控制台，做服务管理、配置管理等操作
 
 从 OpenAPI 可以了解到，Nacos 通过提供一系列的 HTTP 接口来提供 Naming 服务和 Config 服务：
@@ -125,7 +125,7 @@ spring:
 
 ### 临时实例与持久实例
 
-Naocs 的一个特性是：临时实例和持久实例。在定义上区分临时实例和持久实例的关键是健康检查的方式。
+Naocs 的一个特性是：临时实例和持久实例。在定义上区分临时实例和持久实例的关键是健康检查的方式：
 
 - 临时实例使用客户端上报模式
 - 持久实例使用服务端反向探测模式
@@ -141,7 +141,7 @@ Naocs 的一个特性是：临时实例和持久实例。在定义上区分临�
 **临时实例**与**持久实例**的存储位置与健康检测机制是不同的。
 
 1. **临时实例**：默认情况。服务实例仅会注册在 Nacos 内存中，不会持久化到 Nacos 磁盘。其健康检测机制为 Client 模式，即 Client 主动向 Server 上报其健康状态（属于推模式）。默认心跳间隔为 5s；并且在 15s 内 Server 端未收到 Client 心跳，则会将其标记为“**不健康**”状态；若在 30s 内收到了 Client 心跳，则重新恢复到”**健康**“状态，否则该实例将从 Server 端内存中**自动**清除。**适用于实例的弹性扩容场景**。
-2. **持久实例**：服务实例不仅会注册到 Nacos 内存，同时也会被持久化到 Nacos 磁盘，其健康检测机制为 Server 模式，即 Server 会主动去检测 Client 的健康状态（属于拉模式）。默认每 20s 检测一次，健康检测失败后服务实例会被标记为“**不健康**”状态，但不会被清除，因为其是持久化在磁盘上了，因此对于”**不健康**“的实例的清除，需要专门进行。
+2. **持久实例**：服务实例不仅会注册到 Nacos 内存中，同时也会被持久化到 Nacos 磁盘上，其健康检测机制为 Server 模式，即 Server 会主动去检测 Client 的健康状态（属于拉模式）。默认每 20s 检测一次，健康检测失败后服务实例会被标记为“**不健康**”状态，但不会被清除，因为其是持久化在磁盘上了，因此对于”**不健康**“的实例的清除，需要专门进行。
 
 ---
 
@@ -257,7 +257,7 @@ public class pojo.Service {
    /**
      * 健康保护阈值。protect threshold.
      * 为了防止因过多实例故障，导致所有流量全部流入剩余实例，继而造成流量压力将剩余实例压垮，形成雪崩效应。
-     * 应将健康保护阈值定于为一个 0~1 之间的浮点数。
+     * 应将健康保护阈值定为一个 0~1 之间的浮点数。
      * 当域名健康实例数占总服务实例数的比例小于该值时，无论实例是否健康，都会将这个实例返回给客户端。
      * 这样虽然损失了一部分流量，但保证了集群中剩余健康实例能正常工作。
      *
@@ -275,7 +275,7 @@ public class pojo.Service {
 }
 ```
 
-pojo.Service 的 protectThreshold 属性，表示服务端的**保护阈值**。Service 类实现了 RecordListener 接口。这个接口是一个数据监听接口。即 Service 类本身还是一个监听器，用于监听指定数据的变更或删除。
+pojo.Service 的 protectThreshold 属性，表示服务端的**保护阈值**。Service 类实现了 RecordListener 接口。这个接口是一个数据监听接口。即 Service 类本身还是一个监听器，用于监听服务数据的变更或删除。
 
 <br>
 
@@ -444,7 +444,7 @@ public class NacosServiceRegistryAutoConfiguration {
 
 <br>
 
-#### Nacos 客户端发起注册请求
+#### Nacos 客户端提交注册请求
 
 ##### NacosNamingService#registerInstance()
 
@@ -494,7 +494,7 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 <br>
 
-### Nacos 服务的端注册
+### Nacos 服务端的注册
 
 #### Naocs 服务端处理注册请求
 
@@ -542,26 +542,26 @@ Nacos 默认会以 AP 的模式将实例注册进注册表中，ServiceManager#r
 
 初始化服务对象
 
-1. 尝试从注册表中（serviceMap）获取该实例对应的服务的 Service 对象，如果注册表（serviceMap）中没有，说明这个服务是第一次被注册，则新创建这个服务对应的 Service 对象，并添加进注册表（serviceMap）中；
-2. 如果注册表（serviceMap）中存在该服务对象，则直接跳过；
+1. 尝试从服务端本地注册表中（serviceMap）获取该实例对应的服务的 Service 对象，如果注册表（serviceMap）中没有，说明这个服务是第一次被注册，则创建这个服务对应的 Service 对象，并添加进注册表（serviceMap）中；
+2. 如果服务端本地注册表（serviceMap）中存在该服务对象，则直接跳过；
 
 在向注册表中添加服务对象时，做了以下三件事：
 
-1. 把服务对象注册到本地注册表中，此时的服务对象中仅仅保存了 namespaceId 和 serviceName 等信息，与该服务的具体主机 Instance 实例数据无关；
+1. 把服务对象注册到服务端本地注册表中，此时的服务对象中仅仅保存了 namespaceId 和 serviceName 等信息，与该服务的具体主机 Instance 实例数据无关；
 2. 初始化这个 Service 对象，其内部开启了健康检查任务。
 3. 因为服务 Service 对象自身实现了监听接口，所以 Service 本身就是一个监听器，利用一致性服务，把 Service 作为监听器添加进 Nacos Server 集群中。监听器的作用就是当这个服务发生了数据变更，例如新增实例或删除实例，就会触发监听器回调对应的监听方法。分别设置了临时实例和持久实例的监听器。
 
 初始化 Service 对象时，Service 对象内部针对临时实例和持久实例分别开启了对应的健康检查任务：
 
-**临时实例**：当前服务 Service 开启了定时清除过期的临时实例的任务，这个任务延迟 5s 开始，每 5s 执行一次。**在 Service 的初始化时开启了清除过期 Instance 实例的定时任务，其”清除“操作与”注销“请求进行了合并。由当前 Nacos Server 向自己提交一个 delete 请求，由 Nacos Server 端的”注销“方法进行处理**
+**临时实例**：在 Service 的初始化时开启了清除过期 Instance 实例的定时任务，这个任务延迟 5s 开始，每 5s 执行一次 ，其”清除“操作与”注销“请求进行了合并。由当前 Nacos Server 向自己提交一个 delete 请求，由 Nacos Server 端的”注销“方法进行处理。
 
-> 先判断当前服务是否由当前 Server 节点负责，若当前服务不需要当前 Server 节点负责，则直接结束，反之向下执行。在 Nacos 的 AP 架构中，集群中的每一个节点都会有具体负责分配给自己的服务，例如：服务 A 是分配给节点 X，那么节点 X 在这里需要对服务 A 的实例是否过期下线进行判断，其它节点就无需判断了，最终节点 X 同步这个服务 A 的最新信息给到其它节点即可。
+> 先判断当前服务是否由当前 Server 节点负责，若当前服务不需要当前 Server 节点负责，则直接结束，反之向下执行。在 Nacos 的 AP 架构中，集群中的每一个节点都会负责分配给自己的服务，例如：服务 A 是分配给节点 X，那么节点 X 在这里需要对服务 A 的实例是否过期下线进行判断，其它节点就无需判断了，最终节点 X 同步这个服务 A 的最新信息给到其它节点即可。
 >
 > 然后再判断当前服务是否开启了健康检查，默认是开启的，如果没有开启，则直接结束
 >
 > 接着就获取这个服务所包含的所有实例对象，遍历这些对象，对每一个实例对象中的最近一次心跳续约时间与当前时间进行比较，默认相差超过 15s，就把这个实例的健康状态标记为非健康，这里仅仅修改健康状态为”非健康“，并没有把实例进行下线，此时服务的实例数据就发生了变更，然后会发布一个服务变更的事件，即发布一个 ServiceChangeEvent 事件，PushService 订阅了 ServiceChangeEvent 事件，会回调 onApplicationEvent() 方法进行服务变更的推送，将该服务变更事件推送给订阅了该服务的所有客户端。
 >
-> 然后接着会再一次遍历读取所有实例，在这一次的遍历中，如果当前时间与该实例最近心跳续约事件相差大于 30s，就对该实例进行真正的下线操作，也就是将这个实例从注册表中删除。具体是当前服务 Service 调用 Nacos 自研的 HttpClient 向 自己(Nacos Server) 提交一个 delete 请求，该请求最终会由 Nacos Server 的 InstanceController#deregister() 来处理，即与处理客户端提交的注销请求的处理方式相同。上面用到的 Naocs 自研的 HttpClient 是对 Apache 的 http 异步 client 的封装。
+> 然后接着会再一次遍历读取所有实例，在这一次的遍历中，如果当前时间与该实例最近心跳续约事件相差大于 30s，就对该实例进行真正的下线操作，也就是将这个实例从注册表中删除。具体是当前服务 Service 调用 Nacos 自研的 HttpClient 向自己(Nacos Server) 提交一个 delete 请求，该请求最终会由 Nacos Server 的 InstanceController#deregister() 来处理，即与处理客户端提交的注销请求的处理方式相同。上面用到的 Naocs 自研的 HttpClient 是对 Apache 的 http 异步 client 的封装。
 
 **持久实例**：当前服务 Service 会完成集群的初始化，将其所在的集群 Cluster 中所包含的所有持久实例的心跳任务添加到任务队列 taskQueue 中，由线程池来处理，因为持久实例的健康检测是 Server 端向 Client 端发送心跳。
 
@@ -579,18 +579,22 @@ Nacos 默认会以 AP 的模式将实例注册进注册表中，ServiceManager#r
 
 > 再次到注册表中获取当前服务对象，然后给对象加锁（synchronized），使得同一服务下的实例串行操作，在更新实例列表时，是基于异步的线程池来完成的，这个线程池内线程的数量是 1 个。
 >
-> 其内部方法 addIpAddresses() → updateIpAddresses() 利用一致性服务，获取远程注册表中该服务的实例数据，再复制一个本地注册表中该服务的实例数据的副本，对比副本和远程数据，也就是对比本地注册表和远程注册表中的数据，将对比后的数据保存在一个临时集合中，这个临时集合就表示”最新实例“集合，对比策略为：
+> 其内部方法 addIpAddresses() → updateIpAddresses() 先利用一致性服务，获取远程注册表中该服务的实例数据，再复制一个本地注册表中该服务的实例数据的副本，对比副本和远程数据，也就是对比本地注册表和远程注册表中的数据，将对比后的数据保存在一个临时集合中，这个临时集合就表示”最新实例“集合，对比策略为：
 >
 > 1. 若本地注册表的副本数据中包含有远程数据，则以本地注册表中数据为准，将其替换掉远程实例数据，并将替换后的实例数据保存进临时集合中
 > 2. 若本地注册表的副本数据中不包含远程数据，则以远程数据为准，并保存进临时集合中
 >
-> 然后遍历这些需要变更(此处为注册)的实例数据，先判断当前服务下是否存在当前遍历到的实例对应的集群，若不存在，则需实例化这个集群，并建立服务、进群和实例之间的关系。(若当前服务是第一次注册，其在之前创建服务 Service 对象是就已经对集群初始化了，因此不会进入本次操作。)，然后在与”最新实例“集合中的数据做比较，判断依据是实例的 datumKey，其格式为：**ip:port:unknown:clusterName(针对订阅请求)** 或 **ip:unknown:clusterName(这对主动请求)**，即根据 datumKey 判断：
+> 然后遍历这些需要变更(此处为注册)的实例数据，先判断当前服务下是否存在当前遍历到的实例对应的集群，若不存在，则需实例化这个集群，并建立服务、集群和实例之间的关系。(若当前服务是第一次注册，其在之前创建的服务 Service 对象是就已经对集群初始化了，因此不会进入本次操作。)，然后在与”最新实例“集合中的数据做比较，判断依据是实例的 datumKey，其格式为：**ip:port:unknown:clusterName(针对订阅请求)** 或 **ip:unknown:clusterName(这对主动请求)**，即根据 datumKey 判断：
 >
 > 1. 若当前遍历到的需要注册的实例在”最新实例“集合中存在，则说明本次操作属于实例更新，则继续使用原有的实例 ID 作为 datumKey，并将此实例保存进”最新实例“集合中，即替换掉之前的实例数据；
 >
 > 2. 若当前遍历到的需要注册的实例不存在于”最新实例“集合中，则说明这个实例属于新注册实例，则根据相应规则生成新的实例 ID，最后再将当前遍历到的需要注册的实例保存进”最新实例“集合中，此时”最新实例“集合中可能即包含原有注册表中的实例数据，也包含本次需要注册的实例数据。
 >
 > 然后将比对后的数据，也就是这个”最新实例“集合中的数据封装进一个新建的 Instances 对象中，再利用一致性服务，同步到 Nacos 集群的其它节点中。
+>
+> 对于 AP 模式，具体的一致性操作由 DistroConsistencyServiceImpl 完成，其会向将要更新的数据写入到 Service 中，先将 Instances 数据包装后，添加进一个阻塞队列中，然后通过一个单线程的线程池不断的（无限死循环）从阻塞队列中获取任务，然后取出任务中的数据，获取到 Instance 对应的监听器，也即是获取到 Service，然后回调监听器的 onChange() 方法，即 Service#onChange()，Service 会做一些了比对，最终将实例数据保存进clusterMap 中，即注册的实例 Instance 最终保存进 Service 中了。
+>
+> 然后通过一致性服务，将数据同步给其它 Nacos 节点。
 
 <br>
 
@@ -710,12 +714,12 @@ public void subscribe(String serviceName, String groupName, List<String> cluster
 
 2. getServiceInfo()：获取目标服务列表，此方法可以获取到指定服务下指定集群的所有服务实例，并且调用的客户端还会被服务端标记为已订阅客户端。
 
-getServiceInfo() 方法的执行逻辑是先从本地注册表中读取，再根据结构进行选择：
+getServiceInfo() 方法的执行逻辑是先从本地注册表中读取，再根据结果进行选择：
 
 - 如果本地注册表中没有，说明是第一次获取该服务，则从服务端拉取
 - 如果本地注册表中有，则先开启定时更新功能，再从本地缓存中读取数据并返回。
 
-从 serviceInfoMap(客户端本地注册表) 中根据服务名称和集群名称去找到对应的 ServiceInfo 对象，这个 ServiceInfo 对象就是保存了对应服务和集群下的所有实例信息，而 serviceInfoMap 就存放了客户端从服务端去获取到的所有实例信息，也就是说在客户端这边存储了一份实例信息在内存中。
+从 serviceInfoMap(客户端本地注册表) 中根据服务名称和集群名称去找到对应的 ServiceInfo 对象，这个 ServiceInfo 对象就是保存了对应服务和集群下的所有实例信息，而 serviceInfoMap 就存放了客户端从服务端获取到的所有实例信息，也就是说在客户端这边存储了一份实例信息在内存中。
 
 当客户端第一次去请求这个服务和集群下的所有实例的时候，返回的 ServiceInfo 肯定就是 null，也就是内存中是没有的，需要通过 updateServiceNow 方法从 nacos 服务端中去拉取。
 
@@ -860,7 +864,7 @@ public void updateService(String serviceName, String clusters) throws NacosExcep
 处理分为两个分支：
 
 1. 本地注册表中没有服务端返回的服务，说明是第一次拉取该服务的实例，则将服务端返回的数据直接保存进本地注册表 serviceInfoMap 中。
-2. 本地注册表中存在该服务，则说明客户端之前拉取过该服务，此时需要针对不同条件来更新该服务的实例数据。保存完服务数据之后，整理变更的实例数据，发送实例变更事件，该事件的订阅者就会进行监听回调。其事件的发布是将事件添加进一个事件队列中，这是一个异步操作，由于 DefaultPublisher 在初始化时，会开启一个子线程，这个子线程会不断的(死循环)从队列中获取事件进行处理，即遍历所有的事件订阅者，通知他们处理事件。
+2. 本地注册表中存在该服务，则说明客户端之前拉取过该服务，此时需要针对不同条件来更新该服务的实例数据。保存完服务数据之后，整理变更的实例数据，发送实例变更事件，该事件的订阅者就会进行监听回调。其事件的发布是将事件添加进一个事件队列中，这是一个异步操作，由于 DefaultPublisher 在初始化时，会开启一个子线程，这个子线程会不断的(死循环)从队列中获取事件进行处理，即遍历所有的事件订阅者，通知他们处理事件。？？？？？？？？？？？？？？？？？？？？？？？？？？？
 
 Naocs 保证客户端注册表中保存的数据是最新的服务信息数据，是通过服务端在服务发生变更的时候，会推送这个服务的最新数据给到客户端，客户端收到推送数据后，对注册表进行更新。更新完客户端本地注册表之后，会通过 InstancesChangeEvent 事件对应的事件发布者去发布一个 InstanceChangeEvent 事件，即发布一个实例变更的事件，发布完之后，该事件发布者对应的事件订阅者就能够进行监听回调。
 
@@ -1019,7 +1023,7 @@ public void run() {
 
 PushReceiver 会利用线程池来接收推送数据的任务，在接收推送数据的任务中开启了一个无限循环(死循环)，不断地调用 udpSocket 原生 receive() 方法来获取服务端推送来的数据，然后把接收到的数据交给 HostReactor 组件的 processServiceJson() 方法处理，即将来自 Nacos 服务端推送过来的变更的服务数据更新到当前 Nacos 客户端的本地注册表中，更新完本地注册表后，客户端会发布一个 InstancesChangeEvent 事件，发布完成之后，该事件发布者对应的事件订阅者就能够进行监听回调。
 
-HostReactor#processServiceJson()
+**HostReactor#processServiceJson()**
 
 ```java
 /**
@@ -1030,6 +1034,20 @@ HostReactor#processServiceJson()
 NotifyCenter.publishEvent(new InstancesChangeEvent(serviceInfo.getName(), serviceInfo.getGroupName(),
         serviceInfo.getClusters(), serviceInfo.getHosts()));
 ```
+
+客户端处理服务器返回的数据。服务端返回的数据交给 processServiceJson() 方法处理，此方法将来自于服务端返回或推送的数据更新到当前客户端本地注册表中。该方法有两种情况会被调用：
+
+1. 客户端调用服务端拉取数据(包含订阅拉取和普通拉取)，服务端返回结果后调用此方法；
+2. 服务端监听到服务发生变更事件，推送服务最新的实例结果，会调用此方法。
+
+处理分为两个分支：
+
+1. 本地注册表中没有服务端返回的服务，说明是第一次拉取该服务的实例，则将服务端返回的数据直接保存进本地注册表 serviceInfoMap 中。
+2. 本地注册表中存在该服务，则说明客户端之前拉取过该服务，此时需要针对不同条件来更新该服务的实例数据。保存完服务数据之后，整理变更的实例数据，发送实例变更事件，该事件的订阅者就会进行监听回调。其事件的发布是将事件添加进一个事件队列中，这是一个异步操作，由于 DefaultPublisher 在初始化时，会开启一个子线程，这个子线程会不断的(死循环)从队列中获取事件进行处理，即遍历所有的事件订阅者，通知他们处理事件。？？？？？？？？？？？？？？？？？？？？？？？？？？？
+
+Naocs 保证客户端注册表中保存的数据是最新的服务信息数据，是通过服务端在服务发生变更的时候，会推送这个服务的最新数据给到客户端，客户端收到推送数据后，对注册表进行更新。更新完客户端本地注册表之后，会通过 InstancesChangeEvent 事件对应的事件发布者去发布一个 InstanceChangeEvent 事件，即发布一个实例变更的事件，发布完之后，该事件发布者对应的事件订阅者就能够进行监听回调。
+
+HostReactor 组件初始化的时候就注册了一个 InstancesChangeEvent 事件的订阅者，对于注册事件，其实例变更事件订阅者为 InstancesChangeNotifier，未完待补充？？？？？？？
 
 监听器是在 subscribe() 方法中，把指定监听的服务名称和集群名称和对应的监听器放到 listenerMap 中，然后当事件订阅者遍历这些监听器的时候，就会根据发布的事件对象中的服务名称从 listenerMap 中获取到对应的监听器并执行 onEvent() 方法，通过透传的事件对象，用户能够在 onEvent 这个回调方法中获取到指定服务和集群下最新的实例信息了。
 
@@ -1060,7 +1078,7 @@ Nacos Client 接收 Nacos Server 发送的 UDP 请求：
 - Nacos Client 的 Tomcat 启动后会触发监听器 AbstractAutoServiceRegistration 调用 onApplicationEvent() 方法，就会注册 NacosNamingService；
 - NacosNamingService 在初始化的时候就会创建 HostReactor；
 - HostReactor 在创建的时候会创建 PushReceiver；
-- PushReceiver 在创建的时候会异步执行其 run() 方法，这个 run() 方法开启了一个无限循环，用于接收 Nacos Server 发送的 UDP 请求，
+- **PushReceiver 在创建的时候会异步执行其 run() 方法，这个 run() 方法开启了一个无限循环，用于接收 Nacos Server 发送的 UDP 请求**，
 - PushReceiver 处理完请求数据后会向 Nacos Server 发送一个反馈的 UDP 通信请求
 
 > Nacos Client 在应用启动后，会创建 PushReceiver，它会启动一个无限循环，来接收 Nacos Server 端发送的 UDP 通信请求。
@@ -1073,7 +1091,7 @@ Nacos Server 与 Nacos Client 之间之所以能够保持 UDP 通信，是因为
 
 Nacos Server 与 Nacos Client 之间的 UDP 通信，发生在什么状况下？
 
-- 当 Nacos Server 通过心跳机制检测到其注册表中维护的 Instance 实例数据的 healthy 状态变为了 fasle，其需要将这个变更通知到所有订阅该服务的 Nacos Client客户端，Nacos Server 会发布一个事件，而该事件会触发  Nacos Server 通过 UDP 通信将数据发送给 Nacos Client。
+- 当 Nacos Server 通过心跳机制检测到其注册表中维护的 Instance 实例数据发生了变化，其需要将这个变更通知到所有订阅该服务的 Nacos Client客户端，Nacos Server 会发布一个事件，而该事件会触发  Nacos Server 通过 UDP 通信将数据发送给 Nacos Client。
 
 <br>
 
@@ -1142,7 +1160,7 @@ SDK 的注册方式实际是通过 RPC 与注册中心保持链接(此方式是�
 
 Nacos 中使用 SDK 对持久实例的注册实际使用的是 OpenAPI 的方式进行注册的，这样可以保证即使是客户端下线后，也不会影响持久实例的健康检查。
 
-对于持久实例的健康检查，Nacos 采用的是注册中心探测机制，注册中心会在持久服务初始化时，根据客户端选择的协议类型注册探活的定时任务。Nacos 现在内置提供了三种探测的协议，即 HTTP、TCP 已经 MySQL。
+对于持久实例的健康检查，Nacos 采用的是注册中心探测机制，注册中心会在持久服务初始化时，根据客户端选择的协议类型注册探活的定时任务。Nacos 现在内置提供了三种探测的协议，即 HTTP、TCP 以及 MySQL。
 
 一般而言，HTTP 和 TCP 已经可以涵盖绝大多数的健康检查场景，MySQL 主要用于特殊的业务场景，例如数据库的主备需要通过服务名对外提供访问，需要确定当前访问数据库是否为主库时，那么此时的健康检查接口，是一个检查数据库是否为主库的 MySQL 命令。
 
@@ -1183,7 +1201,7 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 }
 ```
 
-心跳请求：BeatReactor.addBeatInfo(groupedServiceName, beatInfo)
+心跳请求：BeatReactor#addBeatInfo(groupedServiceName, beatInfo)
 
 - nacos 实例分为临时实例与永久实例，临时实例时基于心跳的方式做健康检测，而永久实例则是由 nacos 主动探测实例状态。
 
@@ -1205,9 +1223,9 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 #### Nacos 服务端处理客户端心跳续约请求
 
-**InstanceController.beat()**
+**InstanceController#beat()**
 
-该处理方式主要就是在注册表中查找这个 Instance，若没找到，则创建一个，再注册进注册表中；若找到了，则会更新其最后心跳时间戳。其中比较重要的一项工作是，若这个 Instance 的健康状态发生了变更，其会利用 PushService 发布一个服务变更事件，而 PushService 是一个监听器，会触发 PushService.onApplicationEvent()，就会触发 Nacos Server 向 Nacos Client 发送 UDP 通信，就会触发该服务的订阅者更新该服务。
+该处理方式主要就是在注册表中查找这个 Instance，若没找到，则创建一个，再注册进注册表中；若找到了，则会更新其最后心跳时间戳。其中比较重要的一项工作是，若这个 Instance 的健康状态发生了变更，其会利用 PushService 发布一个服务变更事件，而 PushService 是一个监听器，会触发 PushService#onApplicationEvent()，就会触发 Nacos Server 向 Nacos Client 发送 UDP 通信，就会触发该服务的订阅者更新该服务。
 
 其实处理心跳请求的核心就是更新心跳实例的最后一次心跳时间，lastBeat，这个会成为判断实例心跳是否过期的关键指标。
 
@@ -1215,7 +1233,7 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 **对于心跳请求到达了服务端，而服务端注册表中却没有找到该 Instance 的情况，有以下两种可能：**
 
-1. 注册请求先提交了，但由于网络原因，该请求到达服务端之前心跳请却求先到达了；
+1. 注册请求先提交了，但由于网络原因，该请求到达服务端之前心跳请求却先到达了；
 1. 由于网络抖动，客户端正常发送的心跳还没有到达服务端，而服务端就将这个实例 Instance 从注册表中给清除了。网络恢复后，服务端又收到了客户端发来的心跳。
 
 <br>
@@ -1478,4 +1496,4 @@ nacos config server 是如何判断配置文件是否发生了变更？
 
 在 nacos config server  启动时会创建 LongPollingService 实例，该实例用于处理长轮询相关的操作，LongPollingService 在创建时会首先创建一个 allSubs 队列，同时还会注册一个 LocalDataChangeEvent 的订阅者。一旦 nacos config server 中保存的配置发生了变更，就会触发订阅者的回调函数的执行，而回调函数则会引发 DataChangeTask 的异步任务的执行。
 
-DataChangeTask 任务就是从当前 nacos config server 所持有的所有长轮询实例集合 allSubs 队列中查找，到底是那个长轮实例的这个配置文件发生了变更，然后将这个变更的配置文件的 key 发送给这个长轮询实例对应的 nacos config client，并将这个长轮询实例从 allSubs 队列中删除。
+DataChangeTask 任务就是从当前 nacos config server 所持有的所有长轮询实例集合 allSubs 队列中查找，到底是那个长轮询实例的这个配置文件发生了变更，然后将这个变更的配置文件的 key 发送给这个长轮询实例对应的 nacos config client，并将这个长轮询实例从 allSubs 队列中删除。
