@@ -89,7 +89,7 @@ public class Instance implements Serializable {
     private String serviceName;
 
     /**
-     * user extended attributes.
+     * 实例的元数据。user extended attributes.
      */
     private Map<String, String> metadata = new HashMap<String, String>();
 

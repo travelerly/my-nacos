@@ -45,8 +45,8 @@ Nacos 内部提供了 Config Service 和 Naming Service，底层由 Nacos Core �
 - Consumer APP：服务消费者
 - OpenAPI：暴露标准 Rest 风格 HTTP 接口，简单易用，方便多语言集成
 - Config Service：Nacos 的配置服务
-- Naming Service：Nacos 服务注册，服务发现模块
-- Consistency Protocol：一致性服务，用来实现 Nacos 集群节点的数据同步，使用的是 Raft 或 Distro 算法
+- Naming Service：Nacos 服务注册、服务发现模块
+- Consistency Protocol：一致性服务，用来实现 Nacos 集群节点间的数据同步，使用的是 Distro（AP 默认采用的） 或 Raft（CP 采用的） 算法
 - Nacos Console：易用控制台，做服务管理、配置管理等操作
 
 从 OpenAPI 可以了解到，Nacos 通过提供一系列的 HTTP 接口来提供 Naming 服务和 Config 服务：
@@ -75,9 +75,9 @@ Nacos 内部提供了 Config Service 和 Naming Service，底层由 Nacos Core �
 
 nacos 是多级存储模型，最外层通过 namespace 来实现环境隔离，然后是 group 分组，分组下就是服务，一个服务又可以分为不同的集群，集群中包含多个实例，因此注册表结构为一个 Map，类型是：`Map<String,Map<String,Service>>`，外层 key 是 `namespace_id`，内层 key 是 `group+serviceName`，
 
-Service 内部维护一个 Map，结构是：`Map<Strign,Cluster>`，key 是 `clusterName`，值是集群信息
+Service 内部维护一个 Map，结构是：`Map<Strign,Cluster>`，key 是 `clusterName`，value 是集群信息
 
-Cluster 内部维护了一个 Set 集合，元素是 Instance 类型，代表集群中的多个实例。
+Cluster 内部维护了一个 Set 集合，元素是 Instance 类型，代表集群中的一个个的实例。
 
 一个 **namespace** 下可以包含有很多的 **group**，一个 **group** 下可以包含有很多的 **service**。但 **service** 并不是一个简单的微服务提供者，而是一类提供者的集合。**service** 除了包含微服务名称外，还可以包含很多的 **Cluster**，每个 **Cluster** 中可以包含很多的 **Instance** 提供者，**Instance** 才是真正的微服务提供者主机。
 
@@ -115,11 +115,11 @@ spring:
 
 在 Nacos 中，服务的定义包括以下几个内容：
 
-- 命名空间(Namespace)：Nacos 数据模型中最顶层、也是包含范围最广的概念，用于在类似环境或租户等需要强制隔离的场景中定义。Nacos 的服务也需要使用命名空间来进行隔离。
-- 分组(Group)：Nacos 数据模型中仅次于命名空间的一种隔离概念，区别于命名空间的强制隔离属性，分组属于一个弱隔离的概念，主要用于逻辑区分一些服务场景或不同应用的同名服务，最常用的情况主要是同一个服务的测试分组和生产分组、或者将应用作为分组以防止不同应用提供的服务重名
-- 服务名(ServiceName)：该服务实际的名字，一般用于描述该服务提供了某种功能或能力
+- 命名空间(Namespace)：Nacos 数据模型中最顶层、也是包含范围最广的概念，用于在类似环境或租户等需要强制隔离的场景中定义。Nacos 的服务也需要使用命名空间来进行隔离；
+- 分组(Group)：Nacos 数据模型中仅次于命名空间的一种隔离概念，区别于命名空间的强制隔离属性，分组属于一个弱隔离的概念，主要用于逻辑区分一些服务场景或不同应用的同名服务，最常用的情况主要是同一个服务的测试分组和生产分组、或者将应用作为分组以防止不同应用提供的服务重名；
+- 服务名(ServiceName)：该服务实际的名字，一般用于描述该服务提供了某种功能或能力。
 
-之所以 Nacos 将服务的定义拆分为命名空间、分组和服务名，除了方便隔离使用场景外，还有方便用户发现唯一服务的优点。在注册中心的实际使用场景上，同一个公司的不同开发者可能会开发出类似作用的服务，如果仅仅使用服务名来做服务的定义和表示的话，容易在一些通用服务上出现冲突，比如登录服务等。
+之所以 Nacos 将服务的定义拆分为命名空间、分组和服务名，除了方便隔离使用场景外，还有方便用户发现唯一服务的优点。在注册中心的实际使用场景上，同一个公司的不同开发者可能会开发出类似作用的服务，如果仅仅使用服务名来做服务的定义和表示的话，容易在一些通用服务上出现冲突。
 
 <br>
 
@@ -127,14 +127,10 @@ spring:
 
 Naocs 的一个特性是：临时实例和持久实例。在定义上区分临时实例和持久实例的关键是健康检查的方式：
 
-- 临时实例使用客户端上报模式
-- 持久实例使用服务端反向探测模式
+- 临时实例：使用客户端上报模式，临时实例需要能够自动摘除不健康实例，而且无需持久化存储实例，那么这种实例就适用于类 Gossip 的协议。
+- 持久实例：使用服务端反向探测模式，持久实例使用服务端探测的健康检查方式，因为客户端不会上报心跳，那么自然就不能去自动摘除下线的实例。
 
-临时实例需要能够自动摘除不健康实例，而且无需持久化存储实例，那么这种实例就适用于类 Gossip 的协议。
-
-持久实例使用服务端探测的健康检查方式，因为客户端不会上报心跳，那么自然就不能去自动摘除下线的实例。
-
-一些基础的组件，例如数据库、缓存等，这些往往不能上报心跳，这种类型的服务在注册时，就需要作为持久实例进行注册。而上层的业务服务，例如微服务或者 Dubbo 服务，服务的 Provider 端支持添加汇报心跳的逻辑，此时就可以使用动态服务的注册方式。
+一些基础的组件，例如数据库、缓存等，这些往往不能上报心跳，这种类型的服务在注册时，就需要作为持久实例进行注册。而上层的业务服务，例如微服务或者 Dubbo 服务，服务端支持添加上报心跳的逻辑，此时就可以使用动态服务的注册方式。
 
 <br>
 
@@ -252,7 +248,6 @@ public class Service extends pojo.Service implements Record, RecordListener<Inst
   private Map<String, Cluster> clusterMap = new HashMap<>();
 }
 
-
 public class pojo.Service {
    /**
      * 健康保护阈值。protect threshold.
@@ -264,7 +259,7 @@ public class pojo.Service {
      * 与 Eureka 中的保护阈值对比：
      * 1.相同点：都是一个 0-1 的数值，标识健康实例占所有实例的比例。
      * 2.保护方式不同：
-     * Eureka:  一旦健康实例比例小于阈值，则不再从注册表中清除不健康的实例；
+     * Eureka:  一旦健康实例比例小于阈值，则会开启保护，将不会再从注册表中清除不健康的实例，是为了等待那些不健康实例能够再次发送心跳，恢复健康状态；但 Eureka 在任何时候都不会消费不健康的实例。
      * Nacos:   一旦健康实例比例数量大于阈值，则消费者调用到的都是健康实例；
      *          一旦健康实例比例小于阈值，则消费者会从所有实例中进行选择调用，所以有可能会调用到不健康实例，这样可以保护健康的实例不会被压崩溃。
      * 3.范围不同：
@@ -279,7 +274,7 @@ pojo.Service 的 protectThreshold 属性，表示服务端的**保护阈值**。
 
 <br>
 
-**Nacos 中的 SCI （Service-Cluster-Instance）模型：**
+**Nacos 中的 SCI（Service-Cluster-Instance）模型：**
 
 - 其描述的关系是，一个微服务名称指定的服务 Service，可能是由很多的实例 Instance 提供，这些 Instance 实例可以被划分到多个 Cluster 集群中，每个 Cluster 集群中包含若干个 Instance。所以在 Service 类中我们可以看到其包含一个很重要得集合，就是 Map<String, Cluster> clusterMap，其 key 为 clusterName；value 为 Cluster 。而在 Cluster 类中包含两个重要的集合，持久实例集合与临时实例集合。
 - 简单来说，SCI 模型就是，一个 Service 包含很多的 Cluster，而一个 Cluster 包含很多 Instance，这些 Instance 提供的就是 Service 所指的服务。
@@ -290,10 +285,10 @@ pojo.Service 的 protectThreshold 属性，表示服务端的**保护阈值**。
 
 1. 相同点：都是一个 0~1 的数值，表示健康实例占所有实例的比例
 2. 保护方式不同：
-    - Eureka：当健康实例占比小于阈值，则会开启保护，将不会再从注册表中清除不健康的实例，是为了等待那些不健康实例能够再次发送心跳，恢复健康状态；Eureka 在任何时候都不会消费不健康的实例。
+    - Eureka：当健康实例占比小于阈值，则会开启保护，将不会再从注册表中清除不健康的实例，是为了等待那些不健康实例能够再次发送心跳，恢复健康状态；但 Eureka 在任何时候都不会消费不健康的实例。
     - Nacos：
-        - 当健康实例占比大于阈值时，消费者是从健康实例中选取调用；
-        - 当健康实例占比小于保护阈值，则会开启保护，消费者会从所有实例中选取调用，所以有可能会调用到不健康的实例，通过牺牲消费者权益来达到组我保护的目的，这样可以保护健康的实例不会被压崩溃。
+        - 当健康实例占比大于阈值时，消费者消费的都是健康的实例；
+        - 当健康实例占比小于保护阈值，则会开启保护，消费者会从所有实例中选取调用，所以有可能会调用到不健康的实例，通过牺牲消费者权益来达到系统自我保护的目的，这样可以保护健康的实例不会被压崩溃。
 3. 范围不同：
     - Eureka：这个阈值时针对所有微服务
     - Nacos：这个阈值是针对当前 Service 中的服务实例，而不是针对所有的服务实例。即针对当前微服务，而不是所有微服务。
@@ -394,7 +389,7 @@ private ConsistencyService consistencyService;
 
 #### 自动注册原理：
 
-其实就是利用了 Spring 事件机制完成的。Naocs 利用 Spring 的事件机制去实现，就是用 SpringCloud 中对于注册中心的一个标准，该标准就是 springcloud-commons 这个包规定的。其中 **AbstractAutoServiceRegistration**，这个类主要是完成自动注册的一个抽象流程，具体的注册逻辑就需要具体的注册中心自己实现，这个类是一个抽象类，同时也实现了 ApplicationListener 接口，并且接口泛型为 WebServerInitializedEvent，作用就是这个类具有了监听器的功能，监听的事件为 WebServerInitializedEvent，当监听到这个事件的时候，就调用 **onApplicationEvent** 方法，最终会调到 start() 方法，然后继续调用到 register 方法，实现注册。
+Nacos 客户端的注册原理其实就是利用了 Spring 事件机制完成的。Naocs 利用 Spring 的事件机制去实现，就是用 SpringCloud 中对于注册中心的一个标准，该标准就是 springcloud-commons 这个包规定的。其中 **AbstractAutoServiceRegistration**，这个类主要是完成自动注册的一个抽象流程，具体的注册逻辑就需要具体的注册中心自己实现，这个类是一个抽象类，同时也实现了 ApplicationListener 接口，并且接口泛型为 WebServerInitializedEvent，作用就是这个类具有了监听器的功能，监听的事件为 WebServerInitializedEvent，当监听到这个事件的时候，就调用 **onApplicationEvent** 方法，最终会调到 start() 方法，然后继续调用到 register 方法，从而实现注册。
 
 <br>
 
@@ -473,7 +468,7 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 ##### 该方法完成两个任务：
 
-1. 客户端向服务端发送心跳请求，相关内容在服务心跳环节记录。
+1. (临时实例)客户端向服务端发送心跳请求，相关内容在服务心跳环节记录。
 2. 客户端向服务端发送注册请求
 
 <br>
@@ -488,15 +483,15 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 - Nacos 底层是基于 HTTP 协议完成请求的，是使用 Nacos 自定义的一个 HttpClientRequest「JdkHttpClientRequest」发起请求。JdkHttpClientRequest 实现了对 JDK 中的 HttpURLConnection 的封装。
 
-> Nacos Client 向 Nacos Server 发送的注册、订阅、获取状态等连接请求是通过 NamingService 完成，但是心跳请求不是，心跳是通过 BeatReactor 提交的。而 Nacos Client 向 Nacos Server 发送的所有请求最终都是通过 NamingProxy 完成的提交。
+> Nacos Client 向 Nacos Server 发送的注册、订阅、获取状态等连接请求都是通过 NamingService 完成，但是心跳请求不是，心跳是通过 BeatReactor 提交的。而 Nacos Client 向 Nacos Server 发送的所有请求最终都是通过 NamingProxy 完成的提交。
 >
 > Nacos Client 向 Nacos Server 发送的注册、订阅、获取状态等连接请求，是 NamingProxy 分别提交的 **POST**、**PUT**、**GET** 请求。最终是通过其自研的、封装了 JDK 的 HttpURLConnection 的 HttpClientRequest 发出的请求。
 
 <br>
 
-### Nacos 服务端的注册
+### Nacos 服务端处理客户端的注册请求
 
-#### Naocs 服务端处理注册请求
+#### Naocs 服务端处理客户端的注册请求
 
 ##### InstanceController#register()
 
@@ -530,7 +525,7 @@ Nacos 服务端中大量的使用了 WebUtils 中的两个方法 optional() 与 
 
 <br>
 
-Nacos 默认会以 AP 的模式将实例注册进注册表中，ServiceManager#registerInstance() 方法完成了以下三步操作：
+Nacos 服务端默认会以 **AP** 的模式将实例注册进服务端注册表中，ServiceManager#registerInstance() 方法完成了以下三步操作：
 
 1. createEmptyService()：初始化这个实例对应的服务对象
 2. getService()：从注册表中获取到这个实例对应的服务对象
@@ -553,8 +548,10 @@ Nacos 默认会以 AP 的模式将实例注册进注册表中，ServiceManager#r
 
 初始化 Service 对象时，Service 对象内部针对临时实例和持久实例分别开启了对应的健康检查任务：
 
-**临时实例**：在 Service 的初始化时开启了清除过期 Instance 实例的定时任务，这个任务延迟 5s 开始，每 5s 执行一次 ，其”清除“操作与”注销“请求进行了合并。由当前 Nacos Server 向自己提交一个 delete 请求，由 Nacos Server 端的”注销“方法进行处理。
+**临时实例**：在 Service 初始化时，开启了清除过期 Instance 实例的定时任务，这个任务延迟 5s 开始，每 5s 执行一次 ，其”清除“操作与”注销“请求进行了合并。由当前 Nacos Server 向自己提交一个 delete 请求，由 Nacos Server 端的”注销“方法进行处理。
 
+> 清除过期服务的具体逻辑：
+>
 > 先判断当前服务是否由当前 Server 节点负责，若当前服务不需要当前 Server 节点负责，则直接结束，反之向下执行。在 Nacos 的 AP 架构中，集群中的每一个节点都会负责分配给自己的服务，例如：服务 A 是分配给节点 X，那么节点 X 在这里需要对服务 A 的实例是否过期下线进行判断，其它节点就无需判断了，最终节点 X 同步这个服务 A 的最新信息给到其它节点即可。
 >
 > 然后再判断当前服务是否开启了健康检查，默认是开启的，如果没有开启，则直接结束
@@ -616,7 +613,7 @@ Nacos 默认会以 AP 的模式将实例注册进注册表中，ServiceManager#r
 
 **Nacos 服务端在处理客户端的注册请求时，如何保证并发写的安全性？**
 
-> 在注册实例时，会对 Service 对象加锁，不同的 Service 之间本身就不存在并发写的问题，互不影响。而相同的Service 是通过锁来互斥，并且在更新实例列表时，是基于异步的线程池来完成的，而线程池内线程的数量为 1。
+> 在注册实例时，会对 Service 对象加锁，不同的 Service 之间本身就不存在并发写的问题，互不影响。而相同的 Service 是通过锁来互斥，并且在更新实例列表时，是基于异步的线程池来完成的，而线程池内线程的数量为 1。
 
 <br>
 
@@ -725,7 +722,7 @@ getServiceInfo() 方法的执行逻辑是先从本地注册表中读取，再根
 
 总结来说就是客户端每次都会先从 serviceInfoMap(客户端本地注册表中) 中去获取，如果拿到的 ServiceInfo 为空就需要去请求服务端获取，那么这就需要 serviceInfoMap 中保存的数据与服务端是一致最新的，所以 nacos 是如何保证到这一点的呢？
 
-其实服务端在服务发生改变后都会立刻推送最新的 ServiceInfo 给客户端，客户端拿到最新的 ServiceInfo 之后就更新到 serviceInfoMap 中。还有 getServiceInfo 方法还有个小细节，就是在向服务端发送拉取请求之前会往 updatingMap 中添加一个占位，表示这个服务和集群的实例正在获取中，然后在向服务端发送拉取请求执行完之后才把这个占位从 updatingMap 中移除，也就是说如果第一个线程正在请求服务端获取服务实例，后面的线程再进来的话可能就会来到 else if 分支，在这个分支中其他线程通过 wait 方法进入阻塞的状态，直到第一个线程获取到实例集合数据并缓存到内存中的时候才会被唤醒，或者超时唤醒，默认的超时时间是 5s。
+其实服务端在服务发生改变后都会立刻推送最新的 ServiceInfo 给客户端，客户端拿到最新的 ServiceInfo 之后就更新到 serviceInfoMap 中。还有 getServiceInfo 方法还有个小细节，就是在向服务端发送拉取请求之前，会往 updatingMap 中添加一个占位，表示这个服务和集群的实例正在获取中，然后在向服务端发送拉取请求执行完之后，才把这个占位从 updatingMap 中移除，也就是说如果第一个线程正在请求服务端获取服务实例，后面的线程再进来的话可能就会来到 else if 分支，在这个分支中其他线程通过 wait 方法进入阻塞的状态，直到第一个线程获取到实例集合数据并缓存到内存中的时候才会被唤醒，或者超时唤醒，默认的超时时间是 5s。
 
 **HostReactor#getServiceInfo()**
 
@@ -1085,19 +1082,17 @@ Nacos Client 接收 Nacos Server 发送的 UDP 请求：
 
 <br>
 
-Nacos Server 与 Nacos Client 之间之所以能够保持 UDP 通信，是因为在  Nacos Server 中维护着一个缓存 Map，这个 map 是一个双层 map。外层 Map 的 key 为服务名称，格式为：`namespaceId##groupId@@微服务名`，value 为内存 map；而内层 map 的 key 为 代表 Instance 的字符串，value 为 Nacos Server 与 Nacos Client 进行 UDP 链接的 PushClient，这个 PushClient 是包含了这个 Nacos Client 的 port 等数据。**也就是说  Nacos Server 中维护着每一个注册在其中的 Nacos Client 对应的 UDP 通信客户端 PushClient**。
+Nacos Server 与 Nacos Client 之间之所以能够保持 UDP 通信，是因为在  Nacos Server 中维护着一个缓存 Map，这个 map 是一个双层 map。外层 Map 的 key 为服务名称，格式为：`namespaceId##groupId@@微服务名`，value 为内层 map；而内层 map 的 key 为 代表 Instance 的字符串，value 为 Nacos Server 与 Nacos Client 进行 UDP 链接的 PushClient，这个 PushClient 是包含了这个 Nacos Client 的 port 等数据。**也就是说  Nacos Server 中维护着每一个注册在其中的 Nacos Client 对应的 UDP 通信客户端 PushClient**。
 
 <br>
 
 Nacos Server 与 Nacos Client 之间的 UDP 通信，发生在什么状况下？
 
-- 当 Nacos Server 通过心跳机制检测到其注册表中维护的 Instance 实例数据发生了变化，其需要将这个变更通知到所有订阅该服务的 Nacos Client客户端，Nacos Server 会发布一个事件，而该事件会触发  Nacos Server 通过 UDP 通信将数据发送给 Nacos Client。
+- 当 Nacos Server 通过心跳机制检测到其注册表中维护的 Instance 实例数据发生了变化，其需要将这个变更通知到所有订阅该服务的 Nacos Client 客户端，Nacos Server 会发布一个事件，而该事件会触发  Nacos Server 通过 UDP 通信将数据发送给 Nacos Client。
 
 <br>
 
 Nacos Server 与 Nacos Client 之间的 UDP 通信， Nacos Server 充当着 UDP 通信的 Client 端，而 Nacos Client 充当着 Server 端，所以，**在 Nacos Client 中有一个线程处于无限循环中，以随时检测到  Nacos Server 推送来的数据。**
-
-Nacos Server 与 Nacos Client 之间的 UDP 通信，Nacos Server 作为 UDP 通信的 Client 端，其需要知道其链接的 UDP Server，即 Nacos Client 的端口号。在 Nacos Client 定时从  Nacos Server 获取数据时，会随着请求将其 port 发送给  Nacos Server。
 
 <br>
 
@@ -1116,7 +1111,7 @@ Nacos Server 中的 ServiceManager 管理着当前 Server 中的所有服务数�
 
 1. 启动了一个**定时任务**：当前 Nacos Server 每隔 60s 会向其它 Nacos Server 发送一次本机注册表
 2. 从其它 Nacos Server 端获取注册表中的所有 Instance 的最新状态并更新到本地注册表
-3. 启动了一个**定时任务**，每隔 30s 清理一次注册表中空的 Service。（空 Service 即为没有任何 Instance 的 Service）。但这个清除并不是直接的暴力清除，即并不是在执行定时任务时，一经发现空的 Service 就立即将其清除，而是仅使用一个标记该 Service 为空的计数器加一，当计数器的值超出了设定好的清除阈值（默认为 3）时，才将该 Service 清除。另外这个清除工作并不是直接在本地注册表中清除，而是通过一致性操作来完成的。这样做得好处是不仅清除了本地注册表中的数据，同时清除了其它 Nacos Server 注册表中的数据。
+3. 启动了一个**定时任务**，每隔 30s 清理一次注册表中空的 Service，空 Service 即为没有任何 Instance 的 Service，但这个清除并不是直接的暴力清除，即并不是在执行定时任务时，一经发现空的 Service 就立即将其清除，而是仅使用一个标记该 Service 为空的计数器加一，当计数器的值超出了设定好的清除阈值（默认为 3）时，才将该 Service 清除。另外这个清除工作并不是直接在本地注册表中清除，而是通过一致性操作来完成的。这样做得好处是不仅清除了本地注册表中的数据，同时清除了其它 Nacos Server 注册表中的数据。
 
 ---
 
@@ -1152,7 +1147,7 @@ OpenAPI 的注册方式实际是用户根据自身需求调用 HTTP 接口，对
 
 SDK 的注册方式实际是通过 RPC 与注册中心保持链接(此方式是在 Nacos 2.x 版本中使用，旧版本还仍然使用 OpenAPI 的方式)，客户端会定时的通过 RPC 链接向 Nacos 注册中心发送心跳，保持链接的存活。如果客户端和注册中心的链接断开，那么注册中心会主动剔除该客户端所注册的服务，达到下线的效果。同时 Nacos 注册中心还会在启动时，注册一个过期客户端清除的定时任务，用于删除那些健康状态超过一段时间的客户端。
 
-<img src="doc/Nacos 临时实例健康检查.jpg" alt="目录位置" style="zoom: 25%;" />
+<img src="doc/Nacos 临时实例健康检查.jpg" alt="目录位置" style="zoom: 20%;" />
 
 <br>
 
@@ -1203,11 +1198,11 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 心跳请求：BeatReactor#addBeatInfo(groupedServiceName, beatInfo)
 
-- nacos 实例分为临时实例与永久实例，临时实例时基于心跳的方式做健康检测，而永久实例则是由 nacos 主动探测实例状态。
+- nacos 实例分为临时实例与持久实例，临时实例是基于心跳的方式做健康检测，而持久实例则是由 nacos 服务端主动探测实例状态；
 
-- 通过使用一个「one-shot action」一次性定时任务，来发送心跳请求，当 BeatTask 在执行完任务后会再创建一个相同的一次性定时任务，用于发送下一次的心跳请求，这样就实现了一次性定时任务的循环执行。
+- 通过使用一个「one-shot action」一次性定时任务，来发送心跳请求，当 BeatTask 在执行完任务后，会再创建一个相同的一次性定时任务，用于发送下一次的心跳请求，这样就实现了一次性定时任务的循环执行；
 
-- **发送心跳的定时任务是由一个新的线程执行的**。
+- **发送心跳的定时任务是由一个新的线程执行的**；
 
 - groupedServiceName 的格式：**my_group@@colin-nacos-consumer**
 
@@ -1225,7 +1220,7 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 **InstanceController#beat()**
 
-该处理方式主要就是在注册表中查找这个 Instance，若没找到，则创建一个，再注册进注册表中；若找到了，则会更新其最后心跳时间戳。其中比较重要的一项工作是，若这个 Instance 的健康状态发生了变更，其会利用 PushService 发布一个服务变更事件，而 PushService 是一个监听器，会触发 PushService#onApplicationEvent()，就会触发 Nacos Server 向 Nacos Client 发送 UDP 通信，就会触发该服务的订阅者更新该服务。
+该处理方式主要就是在注册表中查找这个 Instance，若没找到，则创建一个，再注册进注册表中；若找到了，则会更新其最后心跳时间戳。其中比较重要的一项工作是，若这个 Instance 的健康状态发生了变更，其会利用 PushService 发布一个服务变更事件，而 PushService 是一个监听器，会触发 `PushService#onApplicationEvent()`，就会触发 Nacos Server 向 Nacos Client 发送 UDP 通信，就会触发该服务的订阅者更新该服务。
 
 其实处理心跳请求的核心就是更新心跳实例的最后一次心跳时间，lastBeat，这个会成为判断实例心跳是否过期的关键指标。
 
@@ -1246,9 +1241,9 @@ public void registerInstance(String serviceName, String groupName, Instance inst
 
 <br>
 
-**Nacos Server 中检测到某个 Instance 实例的心跳超时了 30s，需要将其从注册表中删除，这个删除操作是异步的，通过向自己提交一个删除请求来完成的**，而这个删除请求是通过 Nacos 自研的 HttpClient 提交的，这个 HttpClient 实际是对 Apache 的异步 HttpClient，即 CloseableHttpAsyncClient 进行的封装，即请求最终是通过 CloseableHttpAsyncClient 提交的。
+**Nacos Server 中检测到某个 Instance 实例的心跳超时了 30s，需要将其从注册表中删除，这个删除操作是异步的，通过向自己（服务端）提交一个删除请求来完成的**，而这个删除请求是通过 Nacos 自研的 HttpClient 提交的，这个 HttpClient 实际是对 Apache 的异步 HttpClient，即 CloseableHttpAsyncClient 进行的封装，即请求最终是通过 CloseableHttpAsyncClient 提交的。
 
-**在 Service 的初始化时开启了清除过期 Instance 实例的定时任务，其”清除“操作与”注销“请求进行了合并。由当前 Nacos Server 向自己提交一个 delete 请求，由 Nacos Server 端的”注销“方法进行处理**
+**在 Service 初始化时就开启了清除过期 Instance 实例的定时任务，其”清除“操作与”注销“请求进行了合并。由当前 Nacos Server 向自己提交一个 delete 请求，由 Nacos Server 端的”注销“方法进行处理**
 
 ---
 
@@ -1272,10 +1267,10 @@ Nacos 支持 AP 和 CP 两种⼀致性协议并存：
 
 nacos 集群启动之后按如下原则运作
 
-1. nacos 每个节点都可以处理写请求，收到请求后，路由，根据ip:port路由算法，计算所属节点，把请求转发到负责这个数据的节点去，负责节点解析请求在本机里进行内存存储，定期执行同步任务，把本机负责的数据同步到其他节点，所以每个节点都有全量数据的存储；Distro 分布式一致性协议里，设计了一个定时 sync 同步机制和任务。通过各个节点定时同步数据的机制，可以确保每个节点除了处理自己负责的那部分数据写入，自己也会不断的把自己的数据同步给其它节点，定时的不断的接收到别的节点同步过来的数据。对于的每一个节点都会有所有节点的汇总数据，其会源源不断的接收到集群里完整的服务实例数据，保证数据最终一致性，最终每个节点都会有集群里最新的数据；
+1. nacos 每个节点都可以处理写请求，收到请求后，路由，根据 `ip:port` 路由算法，计算所属节点，把请求转发到负责这个数据的节点去，负责节点解析请求在本机里进行内存存储，定期执行同步任务，把本机负责的数据同步到其他节点，所以每个节点都有全量数据的存储；Distro 分布式一致性协议里，设计了一个定时 sync 同步机制和任务。通过各个节点定时同步数据的机制，可以确保每个节点除了处理自己负责的那部分数据写入，自己也会不断的把自己的数据同步给其它节点，定时的不断的接收到别的节点同步过来的数据。对于的每一个节点都会有所有节点的汇总数据，其会源源不断的接收到集群里完整的服务实例数据，保证数据最终一致性，最终每个节点都会有集群里最新的数据；
 2. 新加入的 nacos 节点会拉取全量数据，轮询所有 nacos 节点，发送请求拉取全量数据，所以其实每个 nacos 节点上都会有所有注册上来的临时服务实例的数据；
 3. nacos 每个节点都会定期发送心跳给其他的节点，心跳请求会进行数据校验，主要是交换数据的校验值，如果发现要是其他机器上的数据跟自己不一致，就会全量拉取数据进行补齐；
-4. nacos 每个节点都可以处理读请求，因为有全量数据。Distro 协议是兼顾 CAP 中的 AP 的，在这个协议之下，所有节点通过定期数据同步，还有心跳校验实现节点数据最终一致，让每个节点都有全量数据，这样的话，如果有节点宕机崩溃都是没关系的。另外网络分区的话，也是没事的，因为不同的网络分区里就是读写分区中的 nacos 节点就可以了，就是没办法互相同步数据了，数据会不一致，但是一旦分区问题恢复了，心跳校验机制运作起来，数据会自动补齐的。
+4. nacos 每个节点都可以处理读请求，因为有全量数据。Distro 协议是兼顾 CAP 中的 AP 的，在这个协议之下，所有节点通过定期数据同步，还有心跳校验实现节点数据的最终一致，让每个节点都有全量数据，这样的话，如果有节点宕机崩溃都是没关系的。另外网络分区的话，也是没事的，因为不同的网络分区里就是读写分区中的 nacos 节点就可以了，就是没办法互相同步数据了，数据会不一致，但是一旦分区问题恢复了，心跳校验机制运作起来，数据会自动补齐的。
 
 <img src="doc/Nacos 集群节点.jpg" alt="目录位置" style="zoom: 25%;" />
 
@@ -1424,19 +1419,25 @@ Nacos Config Client 要加载的配置文件有三种
 配置文件加载顺序的说明：
 
 - 以上三类配置文件的加载顺序为：共享配置 → 扩展配置 → 当前应用配置。如果存在相同属性配置了不同的值，则后加载的会将先加载的给覆盖掉。即优先级为：共享配置 < 扩展配置 < 应用自身配置。
+
 - 对于配置文件的加载过程，又存在三种可用选择：
     1. 应用本地存在同名配置
+    
     2. 远程配置中心存在同名配置
+    
     3. 本地磁盘快照 snapshot 中存在同名配置。
-    4. 以上三种同名配置的优先级为：本地配置 > 远程配置 > 快照配置；只要前面加载到了，后面的就不再加载
+    
+        > 以上三种同名配置的优先级为：本地配置 > 远程配置 > 快照配置；只要前面加载到了，后面的就不再加载
+    
 - 若要在应用本地存放同名配置，则需要存放到当前用户主目录下的 `/Users/colin/nacos/config/fixed-localhost_8848_nacos/data/config-data/{groupId}` 目录中
+
 - 若开启了配置的快照功能，则默认会将快照记录在当前用户主目录下的 `/Users/colin/nacos/config/fixed-localhost_8848_nacos/snapshot/{groupId}` 目录中
 
 <br>
 
 #### 配置文件的加载时机
 
-- SpringBoot 在启动时，会准备环境，就会调用 **NacosPropertySourceLocator.locate()** 方法，此方法会从配置中心加载配置文件。按顺序分别加载共享配置、扩展配置、应用自身配置。
+- SpringBoot 在启动时，会准备环境，就会调用 `NacosPropertySourceLocator#locate()` 方法，该方法会从配置中心加载配置文件。按顺序分别加载共享配置、扩展配置、应用自身配置。
 - 加载自身配置时，会分为以下三种情况：
   1. 加载仅有文件名称，没有扩展名的配置文件
   2. 加载有文件名称，也有扩展名的配置文件
@@ -1463,7 +1464,7 @@ Nacos Config Client 要加载的配置文件有三种
 
 #### client 端定时发出“配置文件变更”检测
 
-应用启动时，会创建 NacosConfigAutoConfiguration，NacosConfigAutoConfiguration 会创建 NacosConfigManager，NacosConfigManager 会创建 NacosConfigService，**NacosConfigService 会创建 ClientWorker，ClientWorker 会启动一个定时任务，来周期性的向 nacos  config server 端发出“配置文件变更”检测请求**。
+应用启动时，会创建 NacosConfigAutoConfiguration，NacosConfigAutoConfiguration 会创建 NacosConfigManager，NacosConfigManager 会创建 NacosConfigService，**NacosConfigService 会创建 ClientWorker，ClientWorker 会启动一个定时任务，来周期性的向 nacos config server 端发出“配置文件变更”检测请求**。
 
 nacos config client 中是以异步线程池的方式向 nacos config server 端发出长轮询任务请求，为了保证执行效率，执行这个异步请求的线程池的核心线程数是当前主机处理器可用的逻辑内核数量，这样可用保证一个逻辑内核处理一个线程。
 
@@ -1501,7 +1502,7 @@ nacos config client 向 nacos config server 发出的长轮询任务的链接请
 
 <br>
 
-nacos config server 接收到 nacos config client 发送的请求后，首先从请求中获取到 nacos config client 所要检测的配置文件的 key，然后对这些配置文件立即进行配置变更检测。如果有配置文件发生了变更，则立即将这些发生了变更的配置文件 key 以 response 的方式发送给 nacos config client 。若没有检测到变更，则为这个发送请求的 nacos config client 创建一个长轮询客户端实例，在这些客户端实例中定义并异步执行了一个 29.5s 的定时任务。该任务再是次查找发生了变更的配置文件的 key，并将这些 key 以response 的方式发送给 nacos config client。
+nacos config server 接收到 nacos config client 发送的请求后，首先从请求中获取到 nacos config client 所要检测的配置文件的 key，然后对这些配置文件立即进行配置变更检测。如果有配置文件发生了变更，则立即将这些发生了变更的配置文件 key 以 response 的方式发送给 nacos config client ；若没有检测到变更，则为这个发送请求的 nacos config client 创建一个长轮询客户端实例，在这些客户端实例中定义并异步执行了一个 29.5s 的定时任务。该任务再是次查找发生了变更的配置文件的 key，并将这些 key 以 response 的方式发送给 nacos config client。
 
 <br>
 
@@ -1519,6 +1520,6 @@ nacos config server 是如何判断配置文件是否发生了变更？
 
 总体思路：
 
-在 nacos config server  启动时会创建 LongPollingService 实例，该实例用于处理长轮询相关的操作，LongPollingService 在创建时会首先创建一个 allSubs 队列，同时还会注册一个 LocalDataChangeEvent 的订阅者。一旦 nacos config server 中保存的配置发生了变更，就会触发订阅者的回调函数的执行，而回调函数则会引发 DataChangeTask 的异步任务的执行。
+在 nacos config server  启动时会创建 LongPollingService 实例，该实例用于处理长轮询相关的操作，LongPollingService 在创建时会首先创建一个 allSubs 队列，将长轮询实例添加到这个队列中，同时还会注册一个 LocalDataChangeEvent 的订阅者。一旦 nacos config server 中保存的配置发生了变更，就会触发订阅者的回调函数的执行，而回调函数则会引发 DataChangeTask 的异步任务的执行。
 
 DataChangeTask 任务就是从当前 nacos config server 所持有的所有长轮询实例集合 allSubs 队列中查找，到底是那个长轮询实例的这个配置文件发生了变更，然后将这个变更的配置文件的 key 发送给这个长轮询实例对应的 nacos config client，并将这个长轮询实例从 allSubs 队列中删除。
