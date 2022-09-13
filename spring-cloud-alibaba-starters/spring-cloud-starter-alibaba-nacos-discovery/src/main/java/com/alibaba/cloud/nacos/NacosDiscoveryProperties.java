@@ -222,6 +222,7 @@ public class NacosDiscoveryProperties {
 	@PostConstruct
 	public void init() throws Exception {
 
+		// 设置元数据默认值：preserved. register.source：SPRING_CLOUD
 		metadata.put(PreservedMetadataKeys.REGISTER_SOURCE, "SPRING_CLOUD");
 		if (secure) {
 			metadata.put("secure", "true");

@@ -216,7 +216,11 @@ public class ClientWorker implements Closeable {
      */
     public CacheData addCacheDataIfAbsent(String dataId, String group, String tenant) throws NacosException {
         String key = GroupKey.getKeyTenant(dataId, group, tenant);
-        // 从缓存 cacheMap 中获取指定文件的 CacheData
+        /**
+         * 从缓存 cacheMap 中获取指定文件的 CacheData
+         * CacheData 是配置文件的本地缓存，每个配置文件对应一个 CacheData
+         * 所有的 CacheData 都保存在 ClientWorker 类中的原子 cacheMap 中
+         */
         CacheData cacheData = cacheMap.get(key);
         if (cacheData != null) {
             // 若缓存中有 CacheData，则直接返回
@@ -395,7 +399,7 @@ public class ClientWorker implements Closeable {
 
         // Round up the longingTaskCount.
         // PerTaskConfigSize：每个长轮询任务可携带的配置文件数量，默认为 3000 个
-        // 向上取证
+        // 向上取整
         int longingTaskCount = (int) Math.ceil(listenerSize / ParamUtil.getPerTaskConfigSize());
 
         if (longingTaskCount > currentLongingTaskCount) {
@@ -556,7 +560,7 @@ public class ClientWorker implements Closeable {
             }
         });
 
-        // 创建线程池，用于执行后续的长轮询任务，其包含的线程数量为当前 Server 的逻辑内核数量。
+        // 再创建一个线程池，用于执行后续的长轮询任务，其包含的线程数量为当前 Server 的逻辑内核数量。
         // 对比 Netty，EventLoopGroup：线程池，EventLoop：线程驱动(线程)，线程池中包含的线程数量是逻辑处理器内核数量的两倍
         this.executorService = Executors
                 .newScheduledThreadPool(Runtime.getRuntime().availableProcessors(), new ThreadFactory() {
@@ -569,7 +573,11 @@ public class ClientWorker implements Closeable {
                     }
                 });
 
-        // 执行一个定时任务(利用上面创建好的仅包含一个线程的线程池来执行这个周期性的任务)
+        /**
+         * 执行一个定时任务(利用上面创建好的仅包含一个线程的线程池来执行这个周期性的任务)
+         * 每个 10ms，按照每 3000 个配置项为一批次捞取待轮询的 cacheData 实例
+         * 将其包装成为一个 LongPollingTask 提交进入第二个线程池 executorService 处理。
+         */
         this.executor.scheduleWithFixedDelay(new Runnable() {
             @Override
             public void run() {
@@ -707,8 +715,16 @@ public class ClientWorker implements Closeable {
         this.isHealthServer = isHealthServer;
     }
 
+    /**
+     * 仅包含一个线程，用于执行定时任务
+     * 每隔 10ms 按照每 3000 个配置项为一批次捞取待轮询的 cacheData 实例，
+     * 将其包装成为一个 LongPollingTask 提交进线程池 executorService 处理
+     */
     final ScheduledExecutorService executor;
 
+    /**
+     * 创建线程池，用于执行后续的长轮询任务，其包含的线程数量为当前 Server 的逻辑内核数量。
+     */
     final ScheduledExecutorService executorService;
 
     /**

@@ -56,6 +56,7 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.PULL_LOG;
 
 /**
  * LongPollingService.
+ * 长轮询处理配置变更服务
  *
  * @author Nacos
  */
@@ -265,14 +266,14 @@ public class LongPollingService {
             // 获取目标配置中所有发生了配置变更的文件 key
             List<String> changedGroups = MD5Util.compareMd5(req, rsp, clientMd5Map);
             if (changedGroups.size() > 0) {
-                // 处理有配置变更发生的情况：生成 response，并关闭链接
+                // 处理配置发生变更的情况：生成 response，并关闭链接
                 generateResponse(req, rsp, changedGroups);
                 LogUtil.CLIENT_LOG.info("{}|{}|{}|{}|{}|{}|{}", System.currentTimeMillis() - start, "instant",
                         RequestUtil.getRemoteIp(req), "polling", clientMd5Map.size(), probeRequestSize,
                         changedGroups.size());
                 return;
             } else if (noHangUpFlag != null && noHangUpFlag.equalsIgnoreCase(TRUE_STR)) {
-                // 处理没有配置发生变更，且非固定时长长链接不挂起的情况：直接关闭链接
+                // 处理配置没有发生变更的情况，且非固定时长长链接不挂起的情况：直接关闭链接
                 LogUtil.CLIENT_LOG.info("{}|{}|{}|{}|{}|{}|{}", System.currentTimeMillis() - start, "nohangup",
                         RequestUtil.getRemoteIp(req), "polling", clientMd5Map.size(), probeRequestSize,
                         changedGroups.size());
@@ -291,7 +292,12 @@ public class LongPollingService {
         // AsyncContext.setTimeout() is incorrect, Control by oneself
         asyncContext.setTimeout(0L);
 
-        // 立即执行客户端长轮询任务 ClientLongPolling
+        /**
+         * 立即执行客户端长轮询任务 ClientLongPolling
+         * 服务端会将收到的轮询请求包装成一个 ClientLongPolling 任务
+         * 该任务持有一个 AsyncContext 响应对象
+         * 通过定时线程池延后 29.5s 执行。比客户端 30s 的超时时间提前 500ms 返回是为了最大程度上保证客户端不会因为网络延时造成超时
+         */
         ConfigExecutor.executeLongPolling(
                 new ClientLongPolling(asyncContext, clientMd5Map, ip, probeRequestSize, timeout, appName, tag));
     }

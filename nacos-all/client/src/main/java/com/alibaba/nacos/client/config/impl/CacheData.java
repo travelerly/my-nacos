@@ -306,8 +306,14 @@ public class CacheData {
 
     public final String tenant;
 
+    /**
+     * 监听器数组，配置发生变更后会一次回调这些监听器
+     */
     private final CopyOnWriteArrayList<ManagerListenerWrap> listeners;
 
+    /**
+     * 用于校验配置文件是否发生变化
+     */
     private volatile String md5;
 
     /**
@@ -320,6 +326,9 @@ public class CacheData {
      */
     private volatile long localConfigLastModified;
 
+    /**
+     * 配置内容
+     */
     private volatile String content;
 
     private int taskId;

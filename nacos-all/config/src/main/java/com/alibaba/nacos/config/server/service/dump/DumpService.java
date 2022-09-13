@@ -143,7 +143,10 @@ public abstract class DumpService {
             Runnable dumpAllBeta = () -> dumpAllTaskMgr.addTask(DumpAllBetaTask.TASK_ID, new DumpAllBetaTask());
             
             Runnable dumpAllTag = () -> dumpAllTaskMgr.addTask(DumpAllTagTask.TASK_ID, new DumpAllTagTask());
-            
+
+            /**
+             * todo: 全量 dump，先清空缓存
+             */
             Runnable clearConfigHistory = () -> {
                 LOGGER.warn("clearConfigHistory start");
                 if (canExecute()) {
@@ -169,6 +172,9 @@ public abstract class DumpService {
             };
             
             try {
+                /**
+                 * todo: 读取 mysql 中的数据？？？？？？
+                 */
                 dumpConfigInfo(dumpAllProcessor);
                 
                 // update Beta cache

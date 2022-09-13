@@ -69,6 +69,8 @@ Nacos 内部提供了 Config Service 和 Naming Service，底层由 Nacos Core �
 
 <img src="doc/nacos数据模型1.jpg" alt="nacos数据模型" style="zoom:50%;" />
 
+<img src="doc/服务领域模型.jpeg" style="zoom: 67%;" />
+
 <br>
 
 ### Nacos 数据模型
@@ -100,7 +102,7 @@ spring:
                 ephemeral: true
 ```
 
-<img src="doc/目录位置.jpg" alt="目录位置" style="zoom:50%;" />
+<img src="doc/目录位置.jpg" alt="目录位置" style="zoom: 33%;" />
 
 **my_group%40%40colin-nacos-consumer@@myCluster**
 
@@ -1304,19 +1306,21 @@ nacos 各节点启动是如何找到集群中其它节点的，就叫寻址，Na
 
 ### Nacos Config 系统架构
 
-<img src="doc/nacos-config系统架构.jpg" alt="nacos-config系统架构" style="zoom:33%;" />
+<img src="doc/nacos-config系统架构.jpg" alt="nacos-config系统架构" style="zoom: 25%;" />
 
 <br>
 
 ### Nacos 数据模型
 
-![nacos数据模型](doc/nacos数据模型.jpg)
+<img src="doc/nacos数据模型.jpg" alt="nacos数据模型" style="zoom:25%;" />
 
 Nacos Config 中有一个概念：tenant，其实就是 namespace，是 bootstrap.yml 文件属性 spring.cloud.nacos.config 中指定的 namespace。在代码中为了区分 spring.cloud.nacos.discovery 中指定的 namespace，所以在 Nacos Config 中使用 tenant。
 
 <br>
 
 ### Nacos 配置中心总结
+
+<img src="doc/Nacos 配置中心.jpg" alt="Nacos 配置中心" style="zoom: 50%;" />
 
 #### 几种常见的配置中心的对比
 
@@ -1462,13 +1466,21 @@ Nacos Config Client 要加载的配置文件有三种
 
 <br>
 
-#### client 端定时发出“配置文件变更”检测
+**配置长轮询：**
 
-应用启动时，会创建 NacosConfigAutoConfiguration，NacosConfigAutoConfiguration 会创建 NacosConfigManager，NacosConfigManager 会创建 NacosConfigService，**NacosConfigService 会创建 ClientWorker，ClientWorker 会启动一个定时任务，来周期性的向 nacos config server 端发出“配置文件变更”检测请求**。
+client 端定时发出“配置文件变更”检测
 
-nacos config client 中是以异步线程池的方式向 nacos config server 端发出长轮询任务请求，为了保证执行效率，执行这个异步请求的线程池的核心线程数是当前主机处理器可用的逻辑内核数量，这样可用保证一个逻辑内核处理一个线程。
+- 应用启动时，会创建 NacosConfigAutoConfiguration，NacosConfigAutoConfiguration 会创建 NacosConfigManager，NacosConfigManager 会创建 NacosConfigService，**NacosConfigService 会创建 ClientWorker，ClientWorker 会启动一个定时任务，来周期性的向 nacos config server 端发出“配置文件变更”检测请求**。
 
-nacos config client 向 nacos config server 发出的长轮询任务的链接请求数量是与动态变更的配置文件的数量有关的。默认情况下，每 3000 个配置文件会发出一个长链接请求，nacos config server 端会对这个长链接中的 3000 个配置进行轮询检测其是否发生了变更。
+- nacos config client 中是以异步线程池的方式向 nacos config server 端发出长轮询任务请求，为了保证执行效率，执行这个异步请求的线程池的核心线程数是当前主机处理器可用的逻辑内核数量，这样可用保证一个逻辑内核处理一个线程。
+
+- nacos config client 向 nacos config server 发出的长轮询任务的链接请求数量是与动态变更的配置文件的数量有关的。默认情况下，每 3000 个配置文件会发出一个长链接请求，nacos config server 端会对这个长链接中的 3000 个配置进行轮询检测其是否发生了变更。
+
+- ClientWorker 通过其下的两个线程池完成配置长轮询的工作，一个是单线程的 executor，每隔 10ms 按照每 3000 个配置项为一批次捞取待轮询的 cacheData 实例，将其包装成为一个 LongPollingTask 提交进入第二个线程池 executorService 处理。
+
+<img src="doc/配置长轮询.png" alt="配置长轮询" style="zoom: 50%;" />
+
+
 
 <br>
 
@@ -1487,9 +1499,29 @@ nacos config client 向 nacos config server 发出的长轮询任务的链接请
 
 <br>
 
-#### server 端处理 client 的配置变更检测请求
+#### server 端启动
 
-**ConfigController.listener() → ConfigServletInner.doPollingConfig()**
+##### 配置 dump
+
+服务端启动时就会依赖 DumpService 的 init() 方法，从数据库中 load 配置存储在本地磁盘上，并将一些重要的元信息例如 MD5 值缓存在内存中。服务端会根据心跳文件中保存的最后一次心跳时间，来判断到底是从数据库 dump 全量配置数据还是部分增量配置数据（如果机器上次心跳间隔是 6h 以内的话）。
+
+全量 dump 当然先清空磁盘缓存，然后根据主键 ID 每次捞取一千条配置刷进磁盘和内存。增量 dump 就是捞取最近六小时的新增配置（包括更新的和删除的），先按照这批数据刷新一遍内存和文件，再根据内存里所有的数据全量去比对一遍数据库，如果有改变的再同步一次，相比于全量 dump 的话会减少一定的数据库 IO 和磁盘 IO 次数。
+
+
+
+#####  配置发布
+
+发布配置的代码位于 `ConfigController#publishConfig()` 中。集群部署，请求一开始也只会打到一台机器，这台机器将配置插入 Mysql 中进行持久化。服务端并不是针对每次配置查询都去访问 MySQL ，而是会依赖 dump 功能在本地文件中将配置缓存起来。因此当单台机器保存完毕配置之后，需要通知其他机器刷新内存和本地磁盘中的文件内容，因此它会发布一个名为 ConfigDataChangeEvent 的事件，这个事件会通过 HTTP 调用通知所有集群节点（包括自身），触发本地文件和内存的刷新。
+
+<img src="doc/配置发布.png" alt="配置发布" style="zoom: 50%;" />
+
+
+
+<br>
+
+#### server 端处理 client 的配置变更检测（长轮询）请求
+
+**ConfigController#listener() → ConfigServletInner#doPollingConfig()**
 
 **总体思路**：
 
@@ -1499,6 +1531,12 @@ nacos config client 向 nacos config server 发出的长轮询任务的链接请
 2. **固定时长的长轮询**：nacos config server 接收到 nacos config client 发送的请求后，会直接维护一个指定的固定时长的长连接，默认是 30s。长连接结束前会检测一次是否发生了变更。不过，在长连接维护期间是不检查变更情况的。
 3. **不挂起的非固定时长的长轮询**：与短轮询类似。nacos config server 接收到 nacos config client 发送的请求后，立即轮询检测所有目标配置文件是否发生了变更，并将检测结果立即返回给 nacos config client。与短轮询不同的是，其返回的结果与 Nacos Client 的版本无关。
 4. **挂起的非固定时长的长轮询**：nacos config server 接收到 nacos config client 发送的请求后，会先检测是否发生了配置变更。若发生了，则将结果直接返回给  nacos config client，并关闭链接。若未发生配置变更，则首先会将这个长轮询实例写入到一个缓存队列 allSubs 中，然后维护一个 30s 的长连接（这个时长用户不能自定义），时间结束，长连接直接关闭。在长连接维护期间，系统同时监听着配置变更事件，一旦发生变更，就会立即将变更发送给相应的长轮询对应的  nacos config client，并关闭连接。
+
+
+
+客户端会有一个长轮询任务，拉取服务端的配置变更，服务端处理逻辑在 LongPollingService 类中，其中有一个 Runnable 任务名为 ClientLongPolling，服务端会将收到的轮询请求包装成一个 ClientLongPolling 任务，该任务持有一个 AsyncContext 响应对象，通过定时线程池延后 29.5s 执行。比客户端 30s 的超时时间提前 500ms 返回是为了最大程度上保证客户端不会因为网络延时造成超时
+
+<img src="doc/处理长轮询.png" alt="处理长轮询" style="zoom: 50%;" />
 
 <br>
 

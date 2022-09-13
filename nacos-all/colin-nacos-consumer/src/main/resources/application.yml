@@ -7,12 +7,12 @@ spring:
     cloud:
         nacos:
             discovery:
-                # server-addr: localhost:8848
+                server-addr: localhost:8848
                 # 默认为 public
-                namespace: my_namespace_id
+                # namespace: my_namespace_id
                 # 默认为 DEFAULT_GROUP
-                group: my_group
+                # group: my_group
                 # 默认为 DEFAULT
-                cluster-name: myCluster
+                # cluster-name: myCluster
                 # 是否是临时实例，默认为 true：是临时实例，false：永久实例
-                ephemeral: true
+                # ephemeral: true

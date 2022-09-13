@@ -100,6 +100,15 @@ public class NacosConfigService implements ConfigService {
         return getConfigInner(namespace, dataId, group, timeoutMs);
     }
 
+    /**
+     * nacos 注册监听器
+     * @param dataId    dataId
+     * @param group     group
+     * @param timeoutMs read timeout
+     * @param listener  {@link Listener}
+     * @return
+     * @throws NacosException
+     */
     @Override
     public String getConfigAndSignListener(String dataId, String group, long timeoutMs, Listener listener)
             throws NacosException {
@@ -144,7 +153,7 @@ public class NacosConfigService implements ConfigService {
         cr.setTenant(tenant);
         cr.setGroup(group);
 
-        // 优先使用本地配置
+        // 优先加载本地配置文件
         String content = LocalConfigInfoProcessor.getFailover(agent.getName(), dataId, group, tenant);
         if (content != null) {
             LOGGER.warn("[{}] [get-config] get failover ok, dataId={}, group={}, tenant={}, config={}", agent.getName(),

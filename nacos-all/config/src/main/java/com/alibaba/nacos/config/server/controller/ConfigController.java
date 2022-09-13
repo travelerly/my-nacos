@@ -300,7 +300,7 @@ public class ConfigController {
     }
 
     /**
-     * 处理 nacos config client 发送的"配置变更"检测请求
+     * nacos config server 处理 nacos config client 发送的"配置变更"检测请求
      * The client listens for configuration changes.
      */
     @PostMapping("/listener")
@@ -327,7 +327,7 @@ public class ConfigController {
             throw new IllegalArgumentException("invalid probeModify");
         }
 
-        // 轮询处理。do long-polling
+        // 处理长轮询。do long-polling
         inner.doPollingConfig(request, response, clientMd5Map, probeModify.length());
     }
 

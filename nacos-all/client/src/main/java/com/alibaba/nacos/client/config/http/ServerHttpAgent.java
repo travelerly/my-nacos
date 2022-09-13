@@ -95,7 +95,7 @@ public class ServerHttpAgent implements HttpAgent {
                     newHeaders.addAll(headers);
                 }
                 Query query = Query.newInstance().initParams(paramValues);
-                // 提交请求
+                // 提交请求(获取远程配置文件)
                 HttpRestResult<String> result = NACOS_RESTTEMPLATE
                         .get(getUrl(currentServerAddr, path), httpConfig, newHeaders, query, String.class);
                 if (isFail(result)) {
@@ -152,7 +152,7 @@ public class ServerHttpAgent implements HttpAgent {
                 if (headers != null) {
                     newHeaders.addAll(headers);
                 }
-                // 提交 POST 请求
+                // client 向 server 提交 POST 请求
                 HttpRestResult<String> result = NACOS_RESTTEMPLATE
                         .postForm(getUrl(currentServerAddr, path), httpConfig, newHeaders, paramValues, String.class);
 
